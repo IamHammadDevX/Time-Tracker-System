@@ -1,0 +1,274 @@
+# ==========================
+# 🌐 MERN STACK SECTION
+# ==========================
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+pnpm-lock.yaml
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+.nyc_output/
+
+# Build output (React, Next.js, etc.)
+build/
+dist/
+public/build/
+.next/
+out/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm/
+
+# Optional eslint cache
+.eslintcache
+
+# REACT specific
+*.tsbuildinfo
+*.tgz
+.cache/
+.parcel-cache/
+vite-dist/
+.vite/
+storybook-static/
+*.sourcemap
+
+# VSCode settings (if any)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==========================
+# 🐍 PYTHON DESKTOP APP SECTION
+# ==========================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.python-version
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff (if used)
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff
+instance/
+.webassets-cache
+
+# Scrapy stuff
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+builddocs/
+
+# PyBuilder
+target/
+
+# PyCharm project settings
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pyre type checker
+.pyre/
+
+# Cython debug symbols
+cython_debug/
+
+# ==========================
+# 🖥️ PYTHON DESKTOP FRAMEWORKS
+# ==========================
+
+# Kivy
+.kivy/
+.kv/
+.kivy_build/
+*.spec
+
+# PyInstaller
+*.manifest
+*.spec
+*.exe
+*.dll
+*.so
+*.dmg
+*.app/
+*.deb
+*.rpm
+*.msi
+*.zip
+*.tar.gz
+
+# Qt/PyQt
+*.pyqt5/
+__pycache__/
+*.ui~
+*.qmlc
+*.jsc
+*.qrc
+*.pyc
+*.db
+*.ini
+*.bak
+
+# Tkinter temporary files
+*.py~ 
+*.bak
+*.tmp
+
+# ==========================
+# ⚙️ GENERAL SYSTEM FILES
+# ==========================
+
+# OS generated files
+.DS_Store
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# Backup files
+*.bak
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# ==========================
+# 💾 DATABASES & SECRETS
+# ==========================
+
+# Local database or data files
+*.sqlite3
+*.db
+*.db3
+*.sqlite
+data/
+database/
+__pycache__/
+
+# Environment / Secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# ==========================
+# 🧪 TESTING & EXPERIMENTS
+# ==========================
+
+# Temporary notebooks or scratchpads
+*.ipynb_checkpoints/
+scratch/
+temp/
+tmp/
+
+# ==========================
+# 🧰 MISCELLANEOUS TOOLS
+# ==========================
+
+# Editor directories and files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Git merge conflict backups
+*.orig
+
+# ==========================
+# ✅ END OF FILE
+# ==========================

@@ -1,0 +1,27 @@
+[
+  {
+    "file": "uploads/2025-11-04T06-31-48-230Z-screenshot.jpg",
+    "employeeId": "john@gmail.com",
+    "ts": "2025-11-04T06:31:48.243Z"
+  },
+  {
+    "file": "uploads/2025-11-04T06-34-48-279Z-screenshot.jpg",
+    "employeeId": "john@gmail.com",
+    "ts": "2025-11-04T06:34:48.282Z"
+  },
+  {
+    "file": "uploads/2025-11-04T06-39-07-861Z-screenshot.jpg",
+    "employeeId": "abc@gmail.com",
+    "ts": "2025-11-04T06:39:07.892Z"
+  },
+  {
+    "file": "uploads/2025-11-04T06-42-08-139Z-screenshot.jpg",
+    "employeeId": "abc@gmail.com",
+    "ts": "2025-11-04T06:42:08.142Z"
+  },
+  {
+    "file": "uploads/2025-11-04T06-45-08-361Z-screenshot.jpg",
+    "employeeId": "abc@gmail.com",
+    "ts": "2025-11-04T06:45:08.372Z"
+  }
+]
