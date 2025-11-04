@@ -67,14 +67,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 // Serve uploaded images statically for the web UI
 app.use('/uploads', express.static(uploadPath));
-// Serve desktop client for download
-// Mount dist first (if present), then fall back to source
+// Serve desktop client source files for download only (py + requirements)
 const projectRoot = path.resolve(process.cwd(), '..');
-const desktopDistPath = path.join(projectRoot, 'desktop', 'dist');
 const desktopSrcPath = path.join(projectRoot, 'desktop');
-if (fs.existsSync(desktopDistPath)) {
-  app.use('/downloads', express.static(desktopDistPath));
-}
 app.use('/downloads', express.static(desktopSrcPath));
 
 // Health check
