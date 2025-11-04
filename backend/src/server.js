@@ -209,33 +209,80 @@ app.get('/api/activity/recent', (req, res) => {
   }
 });
 
-// Live View via Socket.IO
+// Live View via Socket.IO with auth and viewer rooms
 const userRoom = (userId) => `user:${userId}`;
+const viewersRoom = (employeeId) => `live:viewers:${employeeId}`;
+const onlineEmployees = new Set();
+
+io.use((socket, next) => {
+  try {
+    const authHeader = socket.handshake.headers?.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return next(); // allow dev usage without auth
+    const payload = jwt.verify(token, JWT_SECRET);
+    // attach to socket for downstream usage
+    socket.data.userId = payload?.email || payload?.userId;
+    socket.data.role = payload?.role || 'employee';
+    next();
+  } catch (err) {
+    console.warn('[socket] auth failed:', err.message);
+    next();
+  }
+});
 
 io.on('connection', (socket) => {
-  const { userId, role } = socket.handshake.query;
+  const qpUserId = socket.handshake.query?.userId;
+  const qpRole = socket.handshake.query?.role;
+  const userId = socket.data.userId || qpUserId;
+  const role = socket.data.role || qpRole || 'employee';
+
   if (userId) {
     socket.join(userRoom(userId));
   }
 
+  // Track presence: employees
+  if (role === 'employee' && userId) {
+    onlineEmployees.add(userId);
+    io.emit('presence:online', { userId });
+  }
+
+  // On manager connection, send current online employees list
+  if (role === 'manager' || role === 'super_admin') {
+    socket.emit('presence:list', { users: Array.from(onlineEmployees) });
+  }
+
+  // Manager can start live view: join the viewer room and signal employee
   socket.on('live_view:start', ({ employeeId }) => {
     if (role !== 'manager' && role !== 'super_admin') return;
+    socket.join(viewersRoom(employeeId));
     io.to(userRoom(employeeId)).emit('live_view:initiate', { by: userId });
   });
 
+  // Manager can stop live view: leave the viewer room and signal employee
   socket.on('live_view:stop', ({ employeeId }) => {
     if (role !== 'manager' && role !== 'super_admin') return;
+    socket.leave(viewersRoom(employeeId));
     io.to(userRoom(employeeId)).emit('live_view:terminate', { by: userId });
   });
 
-  // Employee streams frames to their room; managers listen using employeeId
+  // Employee can notify termination (e.g., tracking stopped)
+  socket.on('live_view:terminate', ({ employeeId }) => {
+    if (role !== 'employee') return;
+    io.to(viewersRoom(employeeId)).emit('live_view:terminate', { by: userId });
+  });
+
+  // Employee streams frames; server relays only to viewers of that employee
   socket.on('live_view:frame', ({ employeeId, frameBase64, ts }) => {
-    // Relay to all managers (in future, restrict to specific viewers)
-    io.emit('live_view:frame', { employeeId, frameBase64, ts });
+    io.to(viewersRoom(employeeId)).emit('live_view:frame', { employeeId, frameBase64, ts });
   });
 
   socket.on('disconnect', () => {
-    // Optional: emit presence updates
+    // If an employee disconnects, proactively terminate any viewer sessions
+    if (role === 'employee' && userId) {
+      onlineEmployees.delete(userId);
+      io.emit('presence:offline', { userId });
+      io.to(viewersRoom(userId)).emit('live_view:terminate', { by: userId, reason: 'offline' });
+    }
   });
 });
 

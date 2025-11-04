@@ -24,6 +24,7 @@ except Exception:
 
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:4001')
 SCREENSHOT_INTERVAL_SECONDS = int(os.environ.get('SCREENSHOT_INTERVAL_SECONDS', '180'))  # default 3 minutes
+LIVE_VIEW_INTERVAL_SECONDS = int(os.environ.get('LIVE_VIEW_INTERVAL_SECONDS', '5'))  # faster live frames
 
 
 class TimeTrackerApp:
@@ -68,6 +69,8 @@ class TimeTrackerApp:
         self.sio = None
         self.tracker_thread = None
         self._stop_event = threading.Event()
+        self._live_stop_event = threading.Event()
+        self.live_thread = None
 
         self._build_ui()
 
@@ -106,7 +109,8 @@ class TimeTrackerApp:
         notebook.add(track_tab, text='Tracking')
 
         self.live_indicator = tk.StringVar(value='Live View: inactive')
-        ttk.Label(track_tab, textvariable=self.live_indicator, style='Muted.TLabel').pack(anchor='w')
+        self.live_indicator_label = ttk.Label(track_tab, textvariable=self.live_indicator, style='Muted.TLabel')
+        self.live_indicator_label.pack(anchor='w')
 
         self.last_upload_var = tk.StringVar(value='Last upload: -')
         ttk.Label(track_tab, textvariable=self.last_upload_var, style='Muted.TLabel').pack(anchor='w', pady=(6, 0))
@@ -125,10 +129,15 @@ class TimeTrackerApp:
         self.stop_btn = ttk.Button(controls, text='Stop Tracking', style='Danger.TButton', state=tk.DISABLED, command=self.stop_tracking)
         self.stop_btn.pack(side=tk.LEFT, padx=8)
 
-        # Live View tab (placeholder)
+        # Live View tab (status + controls)
         live_tab = ttk.Frame(notebook, padding=16)
         notebook.add(live_tab, text='Live View')
-        ttk.Label(live_tab, text='Live view coming soon', style='Muted.TLabel').pack(anchor='w')
+        ttk.Label(live_tab, text='Live View status', style='Header.TLabel').pack(anchor='w')
+        # Reuse live_indicator for visibility
+        ttk.Label(live_tab, textvariable=self.live_indicator, style='Muted.TLabel').pack(anchor='w', pady=(6, 0))
+        self.live_last_frame_var = tk.StringVar(value='Last live frame: -')
+        ttk.Label(live_tab, textvariable=self.live_last_frame_var, style='Muted.TLabel').pack(anchor='w', pady=(6, 12))
+        ttk.Button(live_tab, text='Disable Live View', style='Danger.TButton', command=self.disable_live_view).pack(anchor='w')
 
     def login(self):
         email = self.email.get().strip()
@@ -176,13 +185,20 @@ class TimeTrackerApp:
     def _on_live_view_start(self, data=None):
         self.live_view_active = True
         self._set_live_indicator(True)
+        self._start_live_loop()
 
     def _on_live_view_stop(self, data=None):
         self.live_view_active = False
         self._set_live_indicator(False)
+        self._stop_live_loop()
 
     def _set_live_indicator(self, active: bool):
         self.live_indicator.set(f'Live View: {"active" if active else "inactive"}')
+        try:
+            # Emphasize transparency: red text when active
+            self.live_indicator_label.configure(foreground=(self.color_error if active else self.color_muted))
+        except Exception:
+            pass
 
     def start_tracking(self):
         if self.tracking:
@@ -207,6 +223,16 @@ class TimeTrackerApp:
         self.stop_btn.configure(state=tk.DISABLED)
         self.countdown_var.set(f'Next capture in {SCREENSHOT_INTERVAL_SECONDS}s')
         self.progress_var.set(0)
+        # If live view is active, notify backend and turn off
+        try:
+            if self.live_view_active and self.sio:
+                self.live_view_active = False
+                self._set_live_indicator(False)
+                self.sio.emit('live_view:terminate', {'employeeId': self.email.get()})
+        except Exception:
+            pass
+        # Ensure live loop stops
+        self._stop_live_loop()
 
     def _capture_screenshot(self):
         with mss.mss() as sct:
@@ -248,8 +274,41 @@ class TimeTrackerApp:
         try:
             b64 = base64.b64encode(small_jpeg).decode('ascii')
             self.sio.emit('live_view:frame', {'employeeId': self.email.get(), 'frameBase64': b64, 'ts': datetime.utcnow().isoformat()})
+            # update UI
+            try:
+                self.live_last_frame_var.set(f"Last live frame: {time.strftime('%H:%M:%S')}")
+            except Exception:
+                pass
         except Exception as e:
             print('[live] emit error:', e)
+
+    def _start_live_loop(self):
+        if self.live_thread and self.live_thread.is_alive():
+            return
+        self._live_stop_event.clear()
+        self.live_thread = threading.Thread(target=self._live_view_loop, daemon=True)
+        self.live_thread.start()
+
+    def _stop_live_loop(self):
+        try:
+            self._live_stop_event.set()
+        except Exception:
+            pass
+
+    def _live_view_loop(self):
+        # Stream small frames more frequently while live view is active
+        while not self._live_stop_event.is_set():
+            if self.live_view_active:
+                try:
+                    _, small_jpeg = self._capture_screenshot()
+                    self._send_live_frame(small_jpeg)
+                except Exception as e:
+                    print('[live] capture error:', e)
+            # sleep regardless to avoid tight loop
+            for _ in range(LIVE_VIEW_INTERVAL_SECONDS * 2):
+                if self._live_stop_event.is_set():
+                    break
+                time.sleep(0.5)
 
     def _tracking_loop(self):
         next_capture = time.time()
@@ -259,6 +318,7 @@ class TimeTrackerApp:
                 try:
                     full_jpeg, small_jpeg = self._capture_screenshot()
                     self._upload_screenshot(full_jpeg)
+                    # Optional: also send one frame on full capture; the live loop handles frequent streaming
                     self._send_live_frame(small_jpeg)
                 except Exception as e:
                     print('[tracking] capture error:', e)
@@ -266,6 +326,19 @@ class TimeTrackerApp:
                 # restart countdown
                 self._schedule_countdown_update(SCREENSHOT_INTERVAL_SECONDS)
             time.sleep(0.5)
+
+    def disable_live_view(self):
+        # Employee-side manual termination for transparency
+        if not self.live_view_active:
+            return
+        self.live_view_active = False
+        self._set_live_indicator(False)
+        self._stop_live_loop()
+        try:
+            if self.sio:
+                self.sio.emit('live_view:terminate', {'employeeId': self.email.get()})
+        except Exception:
+            pass
 
     def _schedule_countdown_update(self, seconds: int):
         # Update progress and countdown label every second
