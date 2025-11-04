@@ -1,3 +1,4 @@
+import React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import Nav from '../components/Nav.jsx'
 import { io } from 'socket.io-client'

@@ -1,3 +1,4 @@
+import React from 'react'
 import Nav from '../components/Nav.jsx'
 
 const API = import.meta.env.VITE_API_URL

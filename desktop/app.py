@@ -22,7 +22,7 @@ except Exception:
     raise RuntimeError('Install dependencies from requirements.txt (mss, Pillow).')
 
 
-BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:4000')
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:4001')
 SCREENSHOT_INTERVAL_SECONDS = int(os.environ.get('SCREENSHOT_INTERVAL_SECONDS', '180'))  # default 3 minutes
 
 

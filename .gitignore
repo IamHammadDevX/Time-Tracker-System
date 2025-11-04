@@ -1,7 +1,10 @@
 # ==========================
 # 🌐 MERN STACK SECTION
 # ==========================
-
+*.jpg
+*.png
+*.gif
+*.svg
 # Node.js
 node_modules/
 npm-debug.log*

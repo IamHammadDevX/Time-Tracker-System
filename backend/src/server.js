@@ -52,7 +52,7 @@ const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
     origin: ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*',
-    credentials: true
+    credentials: false
   }
 });
 
@@ -62,7 +62,8 @@ app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
-app.use(cors({ origin: ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*', credentials: true }));
+// Allow all origins for dev and do not set credentials to avoid the invalid '*' + credentials combination
+app.use(cors({ origin: ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*', credentials: false }));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 // Serve uploaded images statically for the web UI
@@ -244,4 +245,36 @@ connectMongo(process.env.MONGO_URI);
 httpServer.listen(PORT, () => {
   console.log(`[server] API listening on port ${PORT}`);
   console.log(`[server] Upload dir: ${uploadPath}`);
+});
+
+httpServer.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[server] Port ${PORT} is already in use. Is another instance running?`);
+    process.exit(1);
+  } else {
+    console.error('[server] Server error:', err);
+  }
+});
+
+const shutdown = () => {
+  try { io.disconnectSockets(true); } catch {}
+  try { io.close(); } catch {}
+  try {
+    httpServer.close(() => process.exit(0));
+  } catch {
+    process.exit(0);
+  }
+  setTimeout(() => process.exit(0), 3000);
+};
+
+['SIGINT', 'SIGTERM', 'SIGHUP'].forEach((sig) => {
+  try { process.on(sig, shutdown); } catch {}
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('[server] Unhandled rejection:', err);
 });
