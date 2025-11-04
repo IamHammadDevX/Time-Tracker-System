@@ -17,7 +17,7 @@ export default function Login() {
     try {
       const resp = await axios.post(`${API}/api/auth/login`, { email, password, role: 'manager' })
       localStorage.setItem('token', resp.data.token)
-      location.href = '/'
+      location.href = '/dashboard'
     } catch (err) {
       setError(err?.response?.data?.error || err.message)
     } finally {
