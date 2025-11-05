@@ -78,7 +78,7 @@ export default function LiveView() {
   // Apply filter to online employees when manager selected
   useEffect(() => {
     if (!selectedManager) { setFilteredOnline(onlineEmployees); return }
-    const team = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager) || String(e.managerId || '') === String(managers.find(m=>m.id===selectedManager)?.email || ''))
+    const team = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager))
       .map(e => e.email)
     const filtered = onlineEmployees.filter(e => team.includes(e))
     setFilteredOnline(filtered)
@@ -164,6 +164,12 @@ export default function LiveView() {
                   <option key={email} value={email}>{email}</option>
                 ))}
               </select>
+              {selectedManager && filteredOnline.length === 0 && (
+                <div className="text-xs text-gray-600 mt-1">No online employees for this manager yet.</div>
+              )}
+              {!selectedManager && onlineEmployees.length === 0 && (
+                <div className="text-xs text-gray-600 mt-1">No online employees. Ensure desktop client is logged in and interval is assigned.</div>
+              )}
             </div>
             <button className="px-4 py-2.5 rounded bg-green-600 text-white hover:bg-green-700" onClick={start}>Start</button>
             <button className="px-4 py-2.5 rounded bg-gray-700 text-white hover:bg-gray-800" onClick={stop}>Stop</button>

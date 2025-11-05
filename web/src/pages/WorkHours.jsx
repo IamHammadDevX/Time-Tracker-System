@@ -80,7 +80,7 @@ export default function WorkHours() {
   // Apply selected manager filter client-side (super admin only)
   useEffect(() => {
     if (!selectedManager) { setEmployees(allEmployees); return }
-    const filtered = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager) || String(e.managerId || '') === String(managers.find(m=>m.id===selectedManager)?.email || ''))
+    const filtered = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager))
     setEmployees(filtered)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedManager, allEmployees])

@@ -119,17 +119,23 @@ class TimeTrackerApp:
 
         self.live_indicator = tk.StringVar(value='Live View: inactive')
         self.live_indicator_label = ttk.Label(track_tab, textvariable=self.live_indicator, style='Muted.TLabel')
-        self.live_indicator_label.pack(anchor='w')
+        # Hide live view indicator in Tracking tab
+        self.live_indicator_label.pack_forget()
 
         self.last_upload_var = tk.StringVar(value='Last upload: -')
-        ttk.Label(track_tab, textvariable=self.last_upload_var, style='Muted.TLabel').pack(anchor='w', pady=(6, 0))
+        self.last_upload_label = ttk.Label(track_tab, textvariable=self.last_upload_var, style='Muted.TLabel')
+        # Hide last upload label in Tracking tab
+        self.last_upload_label.pack_forget()
 
         self.progress_var = tk.IntVar(value=0)
         self.progress = ttk.Progressbar(track_tab, orient=tk.HORIZONTAL, length=420, mode='determinate')
         self.progress.configure(maximum=self.capture_interval_seconds, variable=self.progress_var)
-        self.progress.pack(fill=tk.X, pady=(12, 8))
+        # Hide progress bar in Tracking tab
+        self.progress.pack_forget()
         self.countdown_var = tk.StringVar(value=f'Next capture in {self.capture_interval_seconds}s')
-        ttk.Label(track_tab, textvariable=self.countdown_var, style='Muted.TLabel').pack(anchor='w')
+        self.countdown_label = ttk.Label(track_tab, textvariable=self.countdown_var, style='Muted.TLabel')
+        # Hide next capture countdown in Tracking tab
+        self.countdown_label.pack_forget()
 
         controls = ttk.Frame(track_tab)
         controls.pack(fill=tk.X, pady=(16, 0))
@@ -142,6 +148,8 @@ class TimeTrackerApp:
         live_tab = ttk.Frame(notebook, padding=16)
         notebook.add(live_tab, text='Live View')
         ttk.Label(live_tab, text='Live View status', style='Header.TLabel').pack(anchor='w')
+        # this will hide the tab of live view
+        self.live_tab.pack_forget()
         # Reuse live_indicator for visibility
         ttk.Label(live_tab, textvariable=self.live_indicator, style='Muted.TLabel').pack(anchor='w', pady=(6, 0))
         self.live_last_frame_var = tk.StringVar(value='Last live frame: -')

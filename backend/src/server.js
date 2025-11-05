@@ -573,7 +573,8 @@ io.use((socket, next) => {
     if (!token) return next(); // allow dev usage without auth
     const payload = jwt.verify(token, JWT_SECRET);
     // attach to socket for downstream usage
-    socket.data.userId = payload?.email || payload?.userId;
+    socket.data.userId = payload?.email || payload?.userId; // email identifier (employees)
+    socket.data.uid = payload?.uid || null; // numeric/uuid id (managers)
     socket.data.role = payload?.role || 'employee';
     next();
   } catch (err) {
@@ -587,6 +588,7 @@ io.on('connection', (socket) => {
   const qpRole = socket.handshake.query?.role;
   const userId = socket.data.userId || qpUserId;
   const role = socket.data.role || qpRole || 'employee';
+  const managerUid = socket.data.uid || null;
 
   if (userId) {
     socket.join(userRoom(userId));
@@ -602,7 +604,7 @@ io.on('connection', (socket) => {
   if (role === 'manager' || role === 'super_admin') {
     let users = Array.from(onlineEmployees);
     if (role === 'manager') {
-      const teamEmails = getTeamEmailsForManager(socket.data.userId || userId);
+      const teamEmails = getTeamEmailsForManager(managerUid || socket.data.uid || socket.data.userId || userId);
       users = users.filter(u => teamEmails.includes(u));
     }
     socket.emit('presence:list', { users });
@@ -612,7 +614,7 @@ io.on('connection', (socket) => {
   socket.on('live_view:start', ({ employeeId }) => {
     if (role !== 'manager' && role !== 'super_admin') return;
     if (role === 'manager') {
-      const teamEmails = getTeamEmailsForManager(socket.data.userId || userId);
+      const teamEmails = getTeamEmailsForManager(managerUid || socket.data.uid || socket.data.userId || userId);
       if (!teamEmails.includes(employeeId)) return; // ignore if not in team
     }
     socket.join(viewersRoom(employeeId));
@@ -624,7 +626,7 @@ io.on('connection', (socket) => {
   socket.on('live_view:stop', ({ employeeId }) => {
     if (role !== 'manager' && role !== 'super_admin') return;
     if (role === 'manager') {
-      const teamEmails = getTeamEmailsForManager(socket.data.userId || userId);
+      const teamEmails = getTeamEmailsForManager(managerUid || socket.data.uid || socket.data.userId || userId);
       if (!teamEmails.includes(employeeId)) return; // ignore if not in team
     }
     socket.leave(viewersRoom(employeeId));

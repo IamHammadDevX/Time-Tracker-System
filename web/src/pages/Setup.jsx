@@ -14,6 +14,9 @@ export default function Setup() {
   const [msg, setMsg] = useState('')
   const [tempPwdMsg, setTempPwdMsg] = useState('')
   const [error, setError] = useState('')
+  const [managers, setManagers] = useState([])
+  const [assignManagerId, setAssignManagerId] = useState('')
+  const [role, setRole] = useState('')
 
   const token = localStorage.getItem('token')
   const headers = { Authorization: `Bearer ${token}` }
@@ -21,6 +24,14 @@ export default function Setup() {
   useEffect(() => {
     axios.get(`${API}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
     axios.get(`${API}/api/employees`, { headers }).then(r => setUsers(r.data.users || [])).catch(()=>{})
+    // decode role from JWT for conditional UI
+    try {
+      const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+      setRole(payload?.role || '')
+      if (payload?.role === 'super_admin') {
+        axios.get(`${API}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || [])).catch(()=>{})
+      }
+    } catch {}
   }, [])
 
   const saveOrg = async () => {
@@ -37,10 +48,12 @@ export default function Setup() {
   const addEmp = async () => {
     setMsg(''); setError('')
     try {
-      const r = await axios.post(`${API}/api/employees`, { email, name }, { headers })
+      const body = role === 'super_admin' && assignManagerId ? { email, name, managerId: assignManagerId } : { email, name }
+      const r = await axios.post(`${API}/api/employees`, body, { headers })
       setUsers(prev => [r.data.user, ...prev])
       const temp = r?.data?.login?.tempPassword
       setEmail(''); setName('')
+      setAssignManagerId('')
       setMsg('Employee added')
       setTempPwdMsg(temp ? `Temp password for ${email}: ${temp}` : '')
     } catch (e) {
@@ -71,6 +84,14 @@ export default function Setup() {
           <div className="flex gap-2">
             <input className="border rounded px-3 py-2" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
             <input className="border rounded px-3 py-2" placeholder="Name (optional)" value={name} onChange={e=>setName(e.target.value)} />
+            {role === 'super_admin' && (
+              <select className="border rounded px-3 py-2" value={assignManagerId} onChange={e=>setAssignManagerId(e.target.value)}>
+                <option value="">Assign manager…</option>
+                {managers.map(m => (
+                  <option key={m.id} value={m.id}>{m.email} ({m.organization?.name || '-'})</option>
+                ))}
+              </select>
+            )}
             <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={addEmp}>Add</button>
           </div>
           <ul className="text-sm list-disc pl-5">
