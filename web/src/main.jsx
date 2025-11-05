@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import LiveView from './pages/LiveView.jsx'
 import Screenshots from './pages/Screenshots.jsx'
 import Activity from './pages/Activity.jsx'
+import WorkHours from './pages/WorkHours.jsx'
 import Setup from './pages/Setup.jsx'
 import Downloads from './pages/Downloads.jsx'
 import Home from './pages/Home.jsx'
@@ -21,6 +22,7 @@ function AppRoutes() {
       <Route path="/live" element={token ? <LiveView /> : <Navigate to="/login" replace />} />
       <Route path="/screenshots" element={token ? <Screenshots /> : <Navigate to="/login" replace />} />
       <Route path="/activity" element={token ? <Activity /> : <Navigate to="/login" replace />} />
+      <Route path="/work-hours" element={token ? <WorkHours /> : <Navigate to="/login" replace />} />
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" replace />} />
       <Route path="/downloads" element={token ? <Downloads /> : <Navigate to="/login" replace />} />
     </Routes>

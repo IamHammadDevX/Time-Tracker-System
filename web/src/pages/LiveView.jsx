@@ -1,5 +1,6 @@
 import React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import axios from 'axios'
 import Nav from '../components/Nav.jsx'
 import { io } from 'socket.io-client'
 // presence is driven via Socket.IO events from backend
@@ -11,6 +12,10 @@ export default function LiveView() {
   const [onlineEmployees, setOnlineEmployees] = useState([])
   const [status, setStatus] = useState('idle') // idle | active | offline
   const [frames, setFrames] = useState([])
+  const [assignedIntervalSec, setAssignedIntervalSec] = useState(null)
+  const [assignMinutes, setAssignMinutes] = useState('3')
+  const [assignMsg, setAssignMsg] = useState('')
+  const [assignErr, setAssignErr] = useState('')
   const socketRef = useRef(null)
 
   useEffect(() => {
@@ -49,6 +54,18 @@ export default function LiveView() {
       setFrames([])
       setStatus('idle')
       socketRef.current?.emit('live_view:start', { employeeId })
+      // Fetch current assigned interval for selected employee
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      axios.get(`${API}/api/capture-interval`, { headers, params: { employeeId } })
+        .then(r => {
+          if (r.data?.assigned) {
+            setAssignedIntervalSec(r.data.intervalSeconds || null)
+          } else {
+            setAssignedIntervalSec(null)
+          }
+        })
+        .catch(() => setAssignedIntervalSec(null))
     }
   }, [employeeId])
 
@@ -62,6 +79,22 @@ export default function LiveView() {
     setStatus('idle')
   }
 
+  const assignInterval = async () => {
+    if (!employeeId) return
+    setAssignMsg(''); setAssignErr('')
+    try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      const mins = Number(assignMinutes)
+      const r = await axios.post(`${API}/api/capture-interval`, { employeeId, intervalMinutes: mins }, { headers })
+      const secs = r.data?.intervalSeconds
+      setAssignedIntervalSec(secs || null)
+      setAssignMsg(`Assigned ${mins} minute(s) to ${employeeId}`)
+    } catch (e) {
+      setAssignErr(e?.response?.data?.error || e.message)
+    }
+  }
+
   const latest = frames[0]
 
   return (
@@ -73,7 +106,7 @@ export default function LiveView() {
             <h2 className="text-2xl md:text-3xl font-bold">Live View</h2>
             <p className="text-gray-700">Monitor an employee’s current activity in real-time.</p>
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 flex-wrap">
             <div>
               <label className="block text-sm">Online Employees</label>
               <select className="border rounded px-3 py-2 min-w-64"
@@ -87,6 +120,33 @@ export default function LiveView() {
             </div>
             <button className="px-4 py-2.5 rounded bg-green-600 text-white hover:bg-green-700" onClick={start}>Start</button>
             <button className="px-4 py-2.5 rounded bg-gray-700 text-white hover:bg-gray-800" onClick={stop}>Stop</button>
+            <div className="ml-4">
+              <label className="block text-sm">Assign Capture Interval</label>
+              <div className="flex items-center gap-2">
+                <select className="border rounded px-3 py-2"
+                  value={assignMinutes}
+                  onChange={e=>setAssignMinutes(e.target.value)}>
+                  <option value="2">2 minutes</option>
+                  <option value="3">3 minutes</option>
+                  <option value="4">4 minutes</option>
+                  <option value="5">5 minutes</option>
+                  <option value="8">8 minutes</option>
+                  <option value="10">10 minutes</option>
+                  <option value="15">15 minutes</option>
+                  <option value="20">20 minutes</option>
+                </select>
+                <button className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={assignInterval} disabled={!employeeId}>Assign</button>
+              </div>
+              <div className="text-xs mt-1 text-gray-600">
+                {assignedIntervalSec ? (
+                  <span>Current: {Math.round(assignedIntervalSec/60)} minute(s)</span>
+                ) : (
+                  <span>No interval assigned</span>
+                )}
+              </div>
+              {assignMsg && <div className="text-xs text-green-700 mt-1">{assignMsg}</div>}
+              {assignErr && <div className="text-xs text-red-600 mt-1">{assignErr}</div>}
+            </div>
           </div>
         </div>
 

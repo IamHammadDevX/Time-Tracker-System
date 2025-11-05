@@ -15,6 +15,7 @@ export default function Nav() {
           {link('/live', 'Live View')}
           {link('/screenshots', 'Screenshots')}
           {link('/activity', 'Activity')}
+          {link('/work-hours', 'Work Hours')}
           {link('/setup', 'Setup')}
           {link('/downloads', 'Downloads')}
         </div>

@@ -25,6 +25,7 @@ except Exception:
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:4001')
 SCREENSHOT_INTERVAL_SECONDS = int(os.environ.get('SCREENSHOT_INTERVAL_SECONDS', '180'))  # default 3 minutes
 LIVE_VIEW_INTERVAL_SECONDS = int(os.environ.get('LIVE_VIEW_INTERVAL_SECONDS', '5'))  # faster live frames
+HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get('HEARTBEAT_INTERVAL_SECONDS', '60'))  # send idle heartbeat every 60s
 
 
 class TimeTrackerApp:
@@ -51,11 +52,17 @@ class TimeTrackerApp:
         self.color_text = '#F9FAFB'
         self.color_muted = '#94A3B8'
         self.color_primary = '#2563EB'
+        self.color_success = '#16A34A'
+        self.color_secondary = '#4B5563'
         self.color_error = '#DC2626'
 
         # Button styles
         self.style.configure('Primary.TButton', padding=8, foreground='white', background=self.color_primary)
-        self.style.map('Primary.TButton', background=[('active', '#1E40AF'), ('pressed', '#1D4ED8')])
+        self.style.map('Primary.TButton', background=[('active', '#1D4ED8'), ('pressed', '#1E40AF')])
+        self.style.configure('Success.TButton', padding=8, foreground='white', background=self.color_success)
+        self.style.map('Success.TButton', background=[('active', '#15803D'), ('pressed', '#166534')])
+        self.style.configure('Secondary.TButton', padding=8, foreground='white', background=self.color_secondary)
+        self.style.map('Secondary.TButton', background=[('active', '#374151'), ('pressed', '#1F2937')])
         self.style.configure('Danger.TButton', padding=8, foreground='white', background=self.color_error)
         self.style.map('Danger.TButton', background=[('active', '#991B1B'), ('pressed', '#B91C1C')])
         self.style.configure('Header.TLabel', font=self.font_title, foreground=self.color_text)
@@ -68,9 +75,11 @@ class TimeTrackerApp:
         self.live_view_active = False
         self.sio = None
         self.tracker_thread = None
+        self.heartbeat_thread = None
         self._stop_event = threading.Event()
         self._live_stop_event = threading.Event()
         self.live_thread = None
+        self.capture_interval_seconds = SCREENSHOT_INTERVAL_SECONDS
 
         self._build_ui()
 
@@ -117,14 +126,14 @@ class TimeTrackerApp:
 
         self.progress_var = tk.IntVar(value=0)
         self.progress = ttk.Progressbar(track_tab, orient=tk.HORIZONTAL, length=420, mode='determinate')
-        self.progress.configure(maximum=SCREENSHOT_INTERVAL_SECONDS, variable=self.progress_var)
+        self.progress.configure(maximum=self.capture_interval_seconds, variable=self.progress_var)
         self.progress.pack(fill=tk.X, pady=(12, 8))
-        self.countdown_var = tk.StringVar(value=f'Next capture in {SCREENSHOT_INTERVAL_SECONDS}s')
+        self.countdown_var = tk.StringVar(value=f'Next capture in {self.capture_interval_seconds}s')
         ttk.Label(track_tab, textvariable=self.countdown_var, style='Muted.TLabel').pack(anchor='w')
 
         controls = ttk.Frame(track_tab)
         controls.pack(fill=tk.X, pady=(16, 0))
-        self.start_btn = ttk.Button(controls, text='Start Tracking', style='Primary.TButton', state=tk.DISABLED, command=self.start_tracking)
+        self.start_btn = ttk.Button(controls, text='Start Tracking', style='Success.TButton', state=tk.DISABLED, command=self.start_tracking)
         self.start_btn.pack(side=tk.LEFT)
         self.stop_btn = ttk.Button(controls, text='Stop Tracking', style='Danger.TButton', state=tk.DISABLED, command=self.stop_tracking)
         self.stop_btn.pack(side=tk.LEFT, padx=8)
@@ -158,9 +167,10 @@ class TimeTrackerApp:
 
         self.status_var.set(f'Logged in as {email}')
         self.header_status.configure(text=f'Logged in as {email}')
-        self.start_btn.configure(state=tk.NORMAL)
         # Connect Socket.IO for live view signaling
         self._connect_socket(email)
+        # Fetch capture interval assigned by manager
+        self._fetch_capture_interval()
 
     def _connect_socket(self, email):
         try:
@@ -169,6 +179,8 @@ class TimeTrackerApp:
             self.sio.on('live_view:initiate', self._on_live_view_start)
             self.sio.on('live_view:terminate', self._on_live_view_stop)
             self.sio.on('live_view:frame', lambda data: None)  # managers receive frames; employee ignores
+            # Interval assignment push from backend
+            self.sio.on('interval:assigned', self._on_interval_assigned)
             # Connect with query string to pass identity/role
             qs = urlencode({'userId': email, 'role': 'employee'})
             self.sio.connect(
@@ -181,6 +193,55 @@ class TimeTrackerApp:
             )
         except Exception as e:
             print('[socket] connection error:', e)
+
+    def _fetch_capture_interval(self):
+        try:
+            headers = { 'Authorization': f'Bearer {self.token}' } if self.token else {}
+            resp = requests.get(f'{BACKEND_URL}/api/capture-interval', headers=headers, timeout=10)
+            data = resp.json()
+            secs = int(data.get('intervalSeconds') or 0)
+            if data.get('assigned') and secs > 0:
+                self.capture_interval_seconds = secs
+                self.progress.configure(maximum=self.capture_interval_seconds)
+                self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
+                # Enable tracking once interval is assigned
+                self.start_btn.configure(state=tk.NORMAL)
+                mins = secs // 60
+                self.status_var.set(f'Interval assigned: {mins} minute(s)')
+            else:
+                # Disable tracking until manager assigns interval
+                self.start_btn.configure(state=tk.DISABLED)
+                self.status_var.set('Awaiting manager interval assignment')
+        except Exception as e:
+            print('[interval] fetch error:', e)
+            self.start_btn.configure(state=tk.DISABLED)
+            self.status_var.set('Failed to load interval; contact your manager')
+
+    def _on_interval_assigned(self, data=None):
+        try:
+            secs = int((data or {}).get('intervalSeconds') or 0)
+        except Exception:
+            secs = 0
+        if secs > 0:
+            self.capture_interval_seconds = secs
+            try:
+                self.progress.configure(maximum=self.capture_interval_seconds)
+            except Exception:
+                pass
+            mins = secs // 60
+            self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
+            self.start_btn.configure(state=tk.NORMAL)
+            self.status_var.set(f'Interval assigned: {mins} minute(s). Starting tracking…')
+            try:
+                self.header_status.configure(text=f'Interval: {mins}m assigned')
+            except Exception:
+                pass
+            # Auto-start tracking if not already running
+            if not self.tracking:
+                try:
+                    self.start_tracking()
+                except Exception:
+                    pass
 
     def _on_live_view_start(self, data=None):
         self.live_view_active = True
@@ -211,6 +272,15 @@ class TimeTrackerApp:
         self.stop_btn.configure(state=tk.NORMAL)
         self.tracker_thread = threading.Thread(target=self._tracking_loop, daemon=True)
         self.tracker_thread.start()
+        # start heartbeat loop
+        self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
+        # notify backend start
+        try:
+            headers = { 'Authorization': f'Bearer {self.token}' }
+            requests.post(f'{BACKEND_URL}/api/work/start', headers=headers, timeout=10)
+        except Exception as e:
+            print('[work] start error:', e)
 
     def stop_tracking(self):
         if not self.tracking:
@@ -221,7 +291,7 @@ class TimeTrackerApp:
         self.header_status.configure(text='Tracking stopped')
         self.start_btn.configure(state=tk.NORMAL)
         self.stop_btn.configure(state=tk.DISABLED)
-        self.countdown_var.set(f'Next capture in {SCREENSHOT_INTERVAL_SECONDS}s')
+        self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
         self.progress_var.set(0)
         # If live view is active, notify backend and turn off
         try:
@@ -233,6 +303,12 @@ class TimeTrackerApp:
             pass
         # Ensure live loop stops
         self._stop_live_loop()
+        # notify backend stop
+        try:
+            headers = { 'Authorization': f'Bearer {self.token}' }
+            requests.post(f'{BACKEND_URL}/api/work/stop', headers=headers, timeout=10)
+        except Exception as e:
+            print('[work] stop error:', e)
 
     def _capture_screenshot(self):
         with mss.mss() as sct:
@@ -322,10 +398,41 @@ class TimeTrackerApp:
                     self._send_live_frame(small_jpeg)
                 except Exception as e:
                     print('[tracking] capture error:', e)
-                next_capture = now + SCREENSHOT_INTERVAL_SECONDS
+                next_capture = now + self.capture_interval_seconds
                 # restart countdown
-                self._schedule_countdown_update(SCREENSHOT_INTERVAL_SECONDS)
+                self._schedule_countdown_update(self.capture_interval_seconds)
             time.sleep(0.5)
+
+    def _get_idle_seconds(self) -> int:
+        # Windows idle time via GetLastInputInfo; fallback 0 on failure
+        try:
+            import ctypes
+            class LASTINPUTINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+            lii = LASTINPUTINFO()
+            lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+            if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+                return 0
+            millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+            return int(millis // 1000)
+        except Exception:
+            return 0
+
+    def _heartbeat_loop(self):
+        # Periodically send idle delta seconds to backend while tracking
+        prev_idle = self._get_idle_seconds()
+        while not self._stop_event.is_set():
+            time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+            if self._stop_event.is_set():
+                break
+            try:
+                current_idle = self._get_idle_seconds()
+                delta = max(0, current_idle - prev_idle)
+                prev_idle = current_idle
+                headers = { 'Authorization': f'Bearer {self.token}' }
+                requests.post(f'{BACKEND_URL}/api/work/heartbeat', json={ 'idleDeltaSeconds': delta }, headers=headers, timeout=10)
+            except Exception as e:
+                print('[work] heartbeat error:', e)
 
     def disable_live_view(self):
         # Employee-side manual termination for transparency
@@ -344,10 +451,13 @@ class TimeTrackerApp:
         # Update progress and countdown label every second
         def tick(remaining):
             if self._stop_event.is_set():
-                self.countdown_var.set(f'Next capture in {SCREENSHOT_INTERVAL_SECONDS}s')
+                self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
                 self.progress_var.set(0)
                 return
-            self.progress_var.set(SCREENSHOT_INTERVAL_SECONDS - remaining)
+            try:
+                self.progress_var.set(self.capture_interval_seconds - remaining)
+            except Exception:
+                pass
             self.countdown_var.set(f'Next capture in {remaining}s')
             if remaining > 0:
                 self.root.after(1000, lambda: tick(remaining - 1))

@@ -32,8 +32,12 @@ const dataPath = path.resolve(process.cwd(), DATA_DIR);
 fs.mkdirSync(dataPath, { recursive: true });
 const orgFile = path.join(dataPath, 'organization.json');
 const usersFile = path.join(dataPath, 'users.json');
+const intervalsFile = path.join(dataPath, 'intervals.json');
+const sessionsFile = path.join(dataPath, 'work_sessions.json');
 if (!fs.existsSync(orgFile)) fs.writeFileSync(orgFile, JSON.stringify({ name: '', createdAt: null }, null, 2));
 if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, '[]');
+if (!fs.existsSync(intervalsFile)) fs.writeFileSync(intervalsFile, '{}');
+if (!fs.existsSync(sessionsFile)) fs.writeFileSync(sessionsFile, '[]');
 
 // Multer storage
 const storage = multer.diskStorage({
@@ -148,6 +152,176 @@ app.get('/api/employees', requireRole(['manager', 'super_admin']), (req, res) =>
     res.json({ users });
   } catch {
     res.json({ users: [] });
+  }
+});
+
+// Screen capture interval configuration
+const allowedMinutes = [2, 3, 4, 5];
+app.get('/api/capture-interval', requireRole(['employee', 'manager', 'super_admin']), (req, res) => {
+  try {
+    const intervals = JSON.parse(fs.readFileSync(intervalsFile, 'utf-8'));
+    const requesterRole = req.user?.role;
+    const targetId = (requesterRole === 'employee') ? req.user?.sub : (req.query.employeeId || req.user?.sub);
+    const secs = intervals[targetId];
+    if (!secs) return res.json({ assigned: false, intervalSeconds: null });
+    res.json({ assigned: true, intervalSeconds: secs });
+  } catch (e) {
+    console.error('[interval:get] error:', e);
+    res.status(500).json({ error: 'Failed to read interval' });
+  }
+});
+
+app.post('/api/capture-interval', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    const { employeeId, intervalMinutes } = req.body || {};
+    if (!employeeId) return res.status(400).json({ error: 'employeeId is required' });
+    const mins = Number(intervalMinutes);
+    if (!allowedMinutes.includes(mins)) return res.status(400).json({ error: `intervalMinutes must be one of ${allowedMinutes.join(', ')}` });
+    const secs = mins * 60;
+    const intervals = JSON.parse(fs.readFileSync(intervalsFile, 'utf-8'));
+    intervals[employeeId] = secs;
+    fs.writeFileSync(intervalsFile, JSON.stringify(intervals, null, 2));
+    // Notify the employee in real-time via Socket.IO so their desktop reflects and starts tracking
+    try {
+      io.to(userRoom(employeeId)).emit('interval:assigned', { employeeId, intervalSeconds: secs });
+    } catch (emitErr) {
+      console.warn('[interval:set] emit failed:', emitErr?.message || emitErr);
+    }
+    res.json({ ok: true, employeeId, intervalSeconds: secs });
+  } catch (e) {
+    console.error('[interval:set] error:', e);
+    res.status(500).json({ error: 'Failed to save interval' });
+  }
+});
+
+// ---- Work Hours Tracking ----
+function readSessions(){
+  try { return JSON.parse(fs.readFileSync(sessionsFile, 'utf-8')); } catch { return []; }
+}
+function writeSessions(arr){
+  fs.writeFileSync(sessionsFile, JSON.stringify(arr, null, 2));
+}
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+// Employee starts a work session
+app.post('/api/work/start', requireRole(['employee']), (req, res) => {
+  try {
+    const employeeId = req.user?.sub;
+    const sessions = readSessions();
+    // If an active session exists, return it
+    const active = sessions.find(s => s.employeeId === employeeId && s.isActive);
+    if (active) return res.json({ ok: true, session: active });
+    const now = new Date().toISOString();
+    const record = { id: `${employeeId}-${Date.now()}`, employeeId, startedAt: now, endedAt: null, isActive: true, idleSeconds: 0, lastHeartbeatAt: now, date: todayStr() };
+    sessions.push(record);
+    writeSessions(sessions);
+    res.status(201).json({ ok: true, session: record });
+  } catch (e) {
+    console.error('[work:start] error:', e);
+    res.status(500).json({ error: 'Failed to start work session' });
+  }
+});
+
+// Employee heartbeat with idle delta seconds
+app.post('/api/work/heartbeat', requireRole(['employee']), (req, res) => {
+  try {
+    const employeeId = req.user?.sub;
+    const { idleDeltaSeconds = 0 } = req.body || {};
+    const sessions = readSessions();
+    const active = sessions.find(s => s.employeeId === employeeId && s.isActive);
+    if (!active) return res.status(404).json({ error: 'No active session' });
+    const delta = Math.max(0, Number(idleDeltaSeconds) || 0);
+    active.idleSeconds = (active.idleSeconds || 0) + delta;
+    active.lastHeartbeatAt = new Date().toISOString();
+    writeSessions(sessions);
+    res.json({ ok: true, idleSeconds: active.idleSeconds });
+  } catch (e) {
+    console.error('[work:heartbeat] error:', e);
+    res.status(500).json({ error: 'Heartbeat failed' });
+  }
+});
+
+// Employee stops the work session
+app.post('/api/work/stop', requireRole(['employee']), (req, res) => {
+  try {
+    const employeeId = req.user?.sub;
+    const sessions = readSessions();
+    const active = sessions.find(s => s.employeeId === employeeId && s.isActive);
+    if (!active) return res.status(404).json({ error: 'No active session' });
+    active.endedAt = new Date().toISOString();
+    active.isActive = false;
+    writeSessions(sessions);
+    res.json({ ok: true, session: active });
+  } catch (e) {
+    console.error('[work:stop] error:', e);
+    res.status(500).json({ error: 'Failed to stop work session' });
+  }
+});
+
+// Manager summary: today per employee
+app.get('/api/work/summary/today', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    const sessions = readSessions();
+    const today = todayStr();
+    const byEmp = {};
+    for (const s of sessions.filter(x => x.date === today)) {
+      const k = s.employeeId;
+      if (!byEmp[k]) byEmp[k] = [];
+      byEmp[k].push(s);
+    }
+    const result = Object.entries(byEmp).map(([employeeId, arr]) => {
+      // Active duration sums across sessions
+      let totalActiveSeconds = 0;
+      let totalIdleSeconds = 0;
+      let loginTimes = [];
+      let logoutTimes = [];
+      for (const s of arr) {
+        const start = new Date(s.startedAt).getTime();
+        const end = s.endedAt ? new Date(s.endedAt).getTime() : Date.now();
+        totalActiveSeconds += Math.max(0, Math.floor((end - start) / 1000));
+        totalIdleSeconds += s.idleSeconds || 0;
+        loginTimes.push(s.startedAt);
+        if (s.endedAt) logoutTimes.push(s.endedAt);
+      }
+      const netActiveSeconds = Math.max(0, totalActiveSeconds - totalIdleSeconds);
+      return { employeeId, loginTimes, logoutTimes, totalActiveSeconds, totalIdleSeconds, netActiveSeconds };
+    });
+    res.json({ today: today, employees: result });
+  } catch (e) {
+    console.error('[work:summary] error:', e);
+    res.status(500).json({ error: 'Summary failed' });
+  }
+});
+
+// Manager endpoint: today sessions per employee with per-session details
+app.get('/api/work/sessions/today', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    const sessions = readSessions();
+    const today = todayStr();
+    const byEmp = {};
+    for (const s of sessions.filter(x => x.date === today)) {
+      const k = s.employeeId;
+      if (!byEmp[k]) byEmp[k] = [];
+      const startMs = new Date(s.startedAt).getTime();
+      const endMs = s.endedAt ? new Date(s.endedAt).getTime() : Date.now();
+      const activeSeconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
+      const idleSeconds = s.idleSeconds || 0;
+      const netActiveSeconds = Math.max(0, activeSeconds - idleSeconds);
+      byEmp[k].push({
+        id: s.id,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        isActive: !!s.isActive,
+        activeSeconds,
+        idleSeconds,
+        netActiveSeconds,
+      });
+    }
+    const result = Object.entries(byEmp).map(([employeeId, sessions]) => ({ employeeId, sessions }));
+    res.json({ today, employees: result });
+  } catch (e) {
+    console.error('[work:sessions] error:', e);
+    res.status(500).json({ error: 'Sessions fetch failed' });
   }
 });
 

@@ -3,7 +3,7 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import Nav from '../components/Nav.jsx'
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Dashboard() {
   const [org, setOrg] = useState(null)
@@ -15,7 +15,7 @@ export default function Dashboard() {
     const token = localStorage.getItem('token')
     const headers = { Authorization: `Bearer ${token}` }
     const getOrg = axios.get(`${API}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
-    const getUsers = axios.get(`${API}/api/employees`, { headers }).then(r => setEmployeesCount((r.data.users || []).length)).catch(()=>{})
+    const getUsers = axios.get(`${API}/api/employees`, { headers }).then(r => setEmployeesCount((r.data.users || []).length)).catch(()=> setEmployeesCount(0))
     const getFiles = axios.get(`${API}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
     Promise.allSettled([getOrg, getUsers, getFiles]).finally(() => setLoading(false))
   }, [])
