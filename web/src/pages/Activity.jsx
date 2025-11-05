@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Nav from '../components/Nav.jsx'
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Activity() {
   const [items, setItems] = useState([])
@@ -42,8 +42,8 @@ export default function Activity() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold">{h.employeeId}</div>
                 </div>
-                <div className="text-sm text-gray-700">Login: {formatTime(h.loginTimes[0]) || '-'}</div>
-                <div className="text-sm text-gray-700">Logout: {formatTime(h.logoutTimes[h.logoutTimes.length-1]) || '-'}</div>
+                <div className="text-sm text-gray-700">Login: {formatTime((h.loginTimes||[])[0]) || '-'}</div>
+                <div className="text-sm text-gray-700">Logout: {formatTime((h.logoutTimes||[])[(h.logoutTimes||[]).length-1]) || '-'}</div>
                 <div className="text-sm mt-2">
                   <span className="inline-block mr-2 px-2 py-1 rounded bg-blue-50 text-blue-700">Active: {fmtDuration(h.totalActiveSeconds)}</span>
                   <span className="inline-block mr-2 px-2 py-1 rounded bg-yellow-50 text-yellow-700">Idle: {fmtDuration(h.totalIdleSeconds)}</span>
@@ -61,10 +61,13 @@ export default function Activity() {
                 <div className="text-sm text-gray-600">{emp.count} shots</div>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {emp.latest.map((f, i) => (
-                  <a key={i} href={`${API}/${f.file}`} target="_blank" rel="noreferrer">
-                    <img className="w-full h-24 object-cover border rounded" src={`${API}/${f.file}`} />
-                  </a>
+                {(Array.isArray(emp.latest) ? emp.latest : []).map((f, i) => (
+                  <div key={i} className="text-center">
+                    <a href={`${API}/${f.file}`} target="_blank" rel="noreferrer">
+                      <img className="w-full h-24 object-cover border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
+                    </a>
+                    <div className="text-[10px] text-gray-600 mt-1">{new Date(f.ts || '').toLocaleString()}</div>
+                  </div>
                 ))}
               </div>
             </div>

@@ -81,7 +81,10 @@ export default function Dashboard() {
           )}
           <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {recentFiles.map((f, i) => (
-              <img key={i} className="w-full h-auto border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
+              <div key={i} className="text-center">
+                <img className="w-full h-auto border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
+                <div className="text-[10px] text-gray-600 mt-1">{new Date(f.ts || '').toLocaleString()}</div>
+              </div>
             ))}
           </div>
         </section>

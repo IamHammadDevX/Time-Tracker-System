@@ -5,13 +5,13 @@ import Nav from '../components/Nav.jsx'
 import { io } from 'socket.io-client'
 // presence is driven via Socket.IO events from backend
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function LiveView() {
   const [employeeId, setEmployeeId] = useState('employee@example.com')
   const [onlineEmployees, setOnlineEmployees] = useState([])
   const [status, setStatus] = useState('idle') // idle | active | offline
-  const [frames, setFrames] = useState([])
+  const [frames, setFrames] = useState([]) // [{b64, ts}]
   const [assignedIntervalSec, setAssignedIntervalSec] = useState(null)
   const [assignMinutes, setAssignMinutes] = useState('3')
   const [assignMsg, setAssignMsg] = useState('')
@@ -24,7 +24,8 @@ export default function LiveView() {
     socketRef.current = s
     s.on('live_view:frame', (payload) => {
       if (payload?.employeeId === employeeId) {
-        setFrames(prev => [payload.frameBase64, ...prev].slice(0, 50))
+        const item = { b64: payload.frameBase64, ts: payload.ts || new Date().toISOString() }
+        setFrames(prev => [item, ...prev].slice(0, 50))
         setStatus('active')
       }
     })
@@ -160,7 +161,10 @@ export default function LiveView() {
               </div>
               <div className="aspect-video bg-gray-100 grid place-items-center">
                 {latest ? (
-                  <img className="w-full h-full object-contain" src={`data:image/jpeg;base64,${latest}`} alt="Live frame" />
+                  <div className="relative w-full h-full">
+                    <img className="w-full h-full object-contain" src={`data:image/jpeg;base64,${latest.b64}`} alt="Live frame" />
+                    <div className="absolute bottom-2 right-2 text-xs bg-black/60 text-white px-2 py-1 rounded">{new Date(latest.ts).toLocaleString()}</div>
+                  </div>
                 ) : (
                   <div className="text-sm text-gray-600">No live frames yet. Click Start to initiate.</div>
                 )}
@@ -171,8 +175,11 @@ export default function LiveView() {
             <div className="rounded-xl border bg-white p-3">
               <div className="font-semibold">Frame History</div>
               <div className="mt-3 grid grid-cols-3 gap-2">
-                {frames.slice(0, 12).map((b64, i) => (
-                  <img key={i} className="w-full h-auto border rounded" src={`data:image/jpeg;base64,${b64}`} />
+                {frames.slice(0, 12).map((f, i) => (
+                  <div key={i} className="text-center">
+                    <img className="w-full h-auto border rounded" src={`data:image/jpeg;base64,${f.b64}`} />
+                    <div className="text-[10px] text-gray-600 mt-1">{new Date(f.ts).toLocaleString()}</div>
+                  </div>
                 ))}
               </div>
             </div>

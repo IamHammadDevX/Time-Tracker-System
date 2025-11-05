@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Nav from '../components/Nav.jsx'
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Screenshots() {
   const [files, setFiles] = useState([])
@@ -25,7 +25,10 @@ export default function Screenshots() {
         {loading && <div>Loading…</div>}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {files.map((f, i) => (
-            <img key={i} className="w-full h-auto border rounded" src={`${API}/${f.file}`} />
+            <div key={i} className="text-center">
+              <img className="w-full h-auto border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
+              <div className="text-xs text-gray-600 mt-1">{new Date(f.ts || '').toLocaleString()}</div>
+            </div>
           ))}
         </div>
       </main>

@@ -350,7 +350,18 @@ app.post('/api/uploads/screenshot', upload.single('screenshot'), async (req, res
 app.get('/api/uploads/list', async (req, res) => {
   try {
     const files = fs.readdirSync(uploadPath).filter(f => /\.(jpg|jpeg|png)$/i.test(f)).sort();
-    res.json({ files: files.map(f => ({ file: `uploads/${f}` })) });
+    let meta = [];
+    try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch {}
+    const items = files.map(f => {
+      const rel = `uploads/${f}`;
+      const m = meta.find(x => x.file === rel);
+      let ts = m?.ts;
+      if (!ts) {
+        try { ts = fs.statSync(path.join(uploadPath, f)).mtime.toISOString(); } catch {}
+      }
+      return { file: rel, ts };
+    });
+    res.json({ files: items });
   } catch (err) {
     console.error('[upload:list] error:', err);
     res.status(500).json({ error: 'List failed' });
