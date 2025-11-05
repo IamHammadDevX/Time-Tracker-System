@@ -10,6 +10,8 @@ import jwt from 'jsonwebtoken';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { connectMongo } from './db.js';
+import { db, getUserByEmail, createUser, verifyPassword, seedDefaultSuperAdmin, createOrganization, listManagers, getOrganizationByManagerId, upsertEmployeePassword } from './sqlite.js';
+import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
@@ -34,10 +36,31 @@ const orgFile = path.join(dataPath, 'organization.json');
 const usersFile = path.join(dataPath, 'users.json');
 const intervalsFile = path.join(dataPath, 'intervals.json');
 const sessionsFile = path.join(dataPath, 'work_sessions.json');
+const auditFile = path.join(dataPath, 'audit_logs.json');
 if (!fs.existsSync(orgFile)) fs.writeFileSync(orgFile, JSON.stringify({ name: '', createdAt: null }, null, 2));
 if (!fs.existsSync(usersFile)) fs.writeFileSync(usersFile, '[]');
 if (!fs.existsSync(intervalsFile)) fs.writeFileSync(intervalsFile, '{}');
 if (!fs.existsSync(sessionsFile)) fs.writeFileSync(sessionsFile, '[]');
+if (!fs.existsSync(auditFile)) fs.writeFileSync(auditFile, '[]');
+
+// Users/team helpers
+function readUsers(){
+  try { return JSON.parse(fs.readFileSync(usersFile, 'utf-8')); } catch { return []; }
+}
+function writeUsers(arr){ fs.writeFileSync(usersFile, JSON.stringify(arr, null, 2)); }
+function getTeamEmailsForManager(managerUid){
+  const users = readUsers();
+  return users.filter(u => u.role === 'employee' && u.managerId === managerUid).map(u => u.email);
+}
+function appendAudit(type, details){
+  try {
+    const arr = JSON.parse(fs.readFileSync(auditFile, 'utf-8'));
+    arr.push({ type, details, ts: new Date().toISOString() });
+    fs.writeFileSync(auditFile, JSON.stringify(arr, null, 2));
+  } catch (e) {
+    console.error('[audit] append failed:', e);
+  }
+}
 
 // Multer storage
 const storage = multer.diskStorage({
@@ -82,12 +105,26 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
-// Auth (stub)
+// Seed default Super Admin on startup
+seedDefaultSuperAdmin();
+
+// Auth
 app.post('/api/auth/login', (req, res) => {
-  const { email, role = 'employee' } = req.body || {};
-  // TODO: validate credentials against DB
-  const token = jwt.sign({ sub: email, role }, JWT_SECRET, { expiresIn: '8h' });
-  res.json({ token });
+  try {
+    const { email, password, role } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    const user = getUserByEmail(email);
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    // If role provided, enforce role match
+    if (role && user.role !== role) return res.status(403).json({ error: 'Forbidden: role mismatch' });
+    const ok = verifyPassword(user, password);
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ sub: user.email, email: user.email, role: user.role, uid: user.id }, JWT_SECRET, { expiresIn: '8h' });
+    res.json({ token });
+  } catch (e) {
+    console.error('[auth:login] error:', e);
+    res.status(500).json({ error: 'Login failed' });
+  }
 });
 
 // Simple auth middleware
@@ -129,39 +166,144 @@ app.get('/api/org', requireRole(['manager', 'super_admin']), (req, res) => {
 
 // Employees
 app.post('/api/employees', requireRole(['manager', 'super_admin']), (req, res) => {
-  const { email, name } = req.body || {};
+  const { email, name, managerId: bodyManagerId, password } = req.body || {};
   if (!email) return res.status(400).json({ error: 'Email is required' });
   try {
-    const users = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
+    const users = readUsers();
     if (users.find(u => u.email.toLowerCase() === String(email).toLowerCase())) {
       return res.status(409).json({ error: 'User already exists' });
     }
-    const record = { email, name: name || '', role: 'employee', createdAt: new Date().toISOString() };
+    // Also prevent duplicate login user in sqlite
+    const existingLogin = getUserByEmail(email);
+    if (existingLogin) {
+      return res.status(409).json({ error: 'Login user already exists' });
+    }
+    const requesterRole = req.user?.role;
+    const requesterUid = req.user?.uid || req.user?.sub; // prefer uid; fallback to email
+    const managerId = (requesterRole === 'manager') ? requesterUid : (bodyManagerId || requesterUid || null);
+
+    // Generate a temporary password if not provided
+    const tempPassword = password && String(password).trim()
+      ? String(password).trim()
+      : Math.random().toString(36).slice(2, 10);
+
+    // Create login user in sqlite (or JSON fallback)
+    const loginUser = createUser({ email, password: tempPassword, role: 'employee' });
+
+    // Store team mapping and display name in simple JSON store
+    const record = { email, name: name || '', role: 'employee', managerId, createdAt: new Date().toISOString() };
     users.push(record);
-    fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
-    res.status(201).json({ user: record });
+    writeUsers(users);
+
+    res.status(201).json({
+      user: record,
+      login: { id: loginUser.id, email: loginUser.email, tempPassword }
+    });
   } catch (e) {
     console.error('[employees] write error:', e);
     res.status(500).json({ error: 'Failed to save user' });
   }
 });
 
+// ---- Super Admin: Manager creation ----
+app.post('/api/admin/managers', requireRole(['super_admin']), (req, res) => {
+  try {
+    const { email, password, orgName } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    const existing = getUserByEmail(email);
+    if (existing) return res.status(409).json({ error: 'User already exists' });
+    const manager = createUser({ email, password, role: 'manager' });
+    let org = null;
+    if (orgName && orgName.trim()) {
+      org = createOrganization({ name: orgName.trim(), managerId: manager.id });
+    }
+    res.status(201).json({ ok: true, manager: { id: manager.id, email: manager.email, role: manager.role }, organization: org });
+  } catch (e) {
+    console.error('[admin:create_manager] error:', e);
+    res.status(500).json({ error: 'Failed to create manager' });
+  }
+});
+
+// ---- Super Admin: Managers list with employee counts ----
+app.get('/api/admin/managers', requireRole(['super_admin']), (req, res) => {
+  try {
+    const managers = listManagers();
+    const employees = readUsers().filter(u => u.role === 'employee');
+    const enriched = managers.map(m => {
+      const org = getOrganizationByManagerId(m.id) || null;
+      const count = employees.filter(e => e.managerId === m.id || e.managerId === m.email).length;
+      return { id: m.id, email: m.email, employeeCount: count, organization: org ? { id: org.id, name: org.name } : null };
+    });
+    res.json({ managers: enriched });
+  } catch (e) {
+    console.error('[admin:list_managers] error:', e);
+    res.status(500).json({ error: 'Failed to list managers' });
+  }
+});
+
+// ---- Super Admin: Audit logs ----
+app.get('/api/admin/audit-logs', requireRole(['super_admin']), (req, res) => {
+  try {
+    let logs = [];
+    try { logs = JSON.parse(fs.readFileSync(auditFile, 'utf-8')); } catch {}
+    const { managerId, employeeId } = req.query || {};
+    if (managerId) logs = logs.filter(l => l.details?.actorId === managerId);
+    if (employeeId) logs = logs.filter(l => l.details?.employeeId === employeeId);
+    res.json({ logs });
+  } catch (e) {
+    console.error('[admin:audit_logs] error:', e);
+    res.status(500).json({ error: 'Failed to read audit logs' });
+  }
+});
+
 app.get('/api/employees', requireRole(['manager', 'super_admin']), (req, res) => {
   try {
-    const users = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
+    const users = readUsers();
+    const role = req.user?.role;
+    if (role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      const teamUsers = users.filter(u => u.role === 'employee' && teamEmails.includes(u.email));
+      return res.json({ users: teamUsers });
+    }
     res.json({ users });
   } catch {
     res.json({ users: [] });
   }
 });
 
+// Admin/Manager: Set or reset an employee password (provision login if missing)
+app.post('/api/admin/employees/password', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    const allUsers = readUsers();
+    const employee = allUsers.find(u => u.role === 'employee' && u.email.toLowerCase() === String(email).toLowerCase());
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    // Managers can only modify their team
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      if (!teamEmails.includes(employee.email)) return res.status(403).json({ error: 'Forbidden: not your team' });
+    }
+    const loginUser = upsertEmployeePassword(employee.email, String(password));
+    res.json({ ok: true, user: { email: employee.email }, login: { id: loginUser.id, email: loginUser.email } });
+  } catch (e) {
+    console.error('[admin:set_employee_password] error:', e);
+    res.status(500).json({ error: 'Failed to set password' });
+  }
+});
+
 // Screen capture interval configuration
-const allowedMinutes = [2, 3, 4, 5];
+// Align with web UI options
+const allowedMinutes = [2, 3, 4, 5, 6, 8, 10, 12, 15, 20];
 app.get('/api/capture-interval', requireRole(['employee', 'manager', 'super_admin']), (req, res) => {
   try {
     const intervals = JSON.parse(fs.readFileSync(intervalsFile, 'utf-8'));
     const requesterRole = req.user?.role;
-    const targetId = (requesterRole === 'employee') ? req.user?.sub : (req.query.employeeId || req.user?.sub);
+    let targetId = (requesterRole === 'employee') ? req.user?.sub : (req.query.employeeId || req.user?.sub);
+    if (requesterRole === 'manager' && targetId) {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      if (!teamEmails.includes(targetId)) return res.status(403).json({ error: 'Forbidden: not your team' });
+    }
     const secs = intervals[targetId];
     if (!secs) return res.json({ assigned: false, intervalSeconds: null });
     res.json({ assigned: true, intervalSeconds: secs });
@@ -177,15 +319,21 @@ app.post('/api/capture-interval', requireRole(['manager', 'super_admin']), (req,
     if (!employeeId) return res.status(400).json({ error: 'employeeId is required' });
     const mins = Number(intervalMinutes);
     if (!allowedMinutes.includes(mins)) return res.status(400).json({ error: `intervalMinutes must be one of ${allowedMinutes.join(', ')}` });
-    const secs = mins * 60;
-    const intervals = JSON.parse(fs.readFileSync(intervalsFile, 'utf-8'));
-    intervals[employeeId] = secs;
-    fs.writeFileSync(intervalsFile, JSON.stringify(intervals, null, 2));
-    // Notify the employee in real-time via Socket.IO so their desktop reflects and starts tracking
-    try {
-      io.to(userRoom(employeeId)).emit('interval:assigned', { employeeId, intervalSeconds: secs });
-    } catch (emitErr) {
-      console.warn('[interval:set] emit failed:', emitErr?.message || emitErr);
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      if (!teamEmails.includes(employeeId)) return res.status(403).json({ error: 'Forbidden: not your team' });
+    }
+  const secs = mins * 60;
+  const intervals = JSON.parse(fs.readFileSync(intervalsFile, 'utf-8'));
+  intervals[employeeId] = secs;
+  fs.writeFileSync(intervalsFile, JSON.stringify(intervals, null, 2));
+  // Audit
+  appendAudit('interval_set', { actorId: req.user?.uid || req.user?.sub, employeeId, intervalMinutes: mins });
+  // Notify the employee in real-time via Socket.IO so their desktop reflects and starts tracking
+  try {
+    io.to(userRoom(employeeId)).emit('interval:assigned', { employeeId, intervalSeconds: secs });
+  } catch (emitErr) {
+    console.warn('[interval:set] emit failed:', emitErr?.message || emitErr);
     }
     res.json({ ok: true, employeeId, intervalSeconds: secs });
   } catch (e) {
@@ -269,7 +417,12 @@ app.get('/api/work/summary/today', requireRole(['manager', 'super_admin']), (req
       if (!byEmp[k]) byEmp[k] = [];
       byEmp[k].push(s);
     }
-    const result = Object.entries(byEmp).map(([employeeId, arr]) => {
+    let entries = Object.entries(byEmp);
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      entries = entries.filter(([employeeId]) => teamEmails.includes(employeeId));
+    }
+    const result = entries.map(([employeeId, arr]) => {
       // Active duration sums across sessions
       let totalActiveSeconds = 0;
       let totalIdleSeconds = 0;
@@ -317,7 +470,12 @@ app.get('/api/work/sessions/today', requireRole(['manager', 'super_admin']), (re
         netActiveSeconds,
       });
     }
-    const result = Object.entries(byEmp).map(([employeeId, sessions]) => ({ employeeId, sessions }));
+    let entries = Object.entries(byEmp);
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      entries = entries.filter(([employeeId]) => teamEmails.includes(employeeId));
+    }
+    const result = entries.map(([employeeId, sessions]) => ({ employeeId, sessions }));
     res.json({ today, employees: result });
   } catch (e) {
     console.error('[work:sessions] error:', e);
@@ -347,20 +505,24 @@ app.post('/api/uploads/screenshot', upload.single('screenshot'), async (req, res
 });
 
 // List uploaded screenshots (development helper)
-app.get('/api/uploads/list', async (req, res) => {
+app.get('/api/uploads/list', requireRole(['manager', 'super_admin']), async (req, res) => {
   try {
     const files = fs.readdirSync(uploadPath).filter(f => /\.(jpg|jpeg|png)$/i.test(f)).sort();
     let meta = [];
     try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch {}
-    const items = files.map(f => {
+    let items = files.map(f => {
       const rel = `uploads/${f}`;
       const m = meta.find(x => x.file === rel);
       let ts = m?.ts;
       if (!ts) {
         try { ts = fs.statSync(path.join(uploadPath, f)).mtime.toISOString(); } catch {}
       }
-      return { file: rel, ts };
+      return { file: rel, ts, employeeId: m?.employeeId };
     });
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      items = items.filter(it => it.employeeId && teamEmails.includes(it.employeeId));
+    }
     res.json({ files: items });
   } catch (err) {
     console.error('[upload:list] error:', err);
@@ -369,7 +531,7 @@ app.get('/api/uploads/list', async (req, res) => {
 });
 
 // Activity: recent screenshots grouped by employee (dev helper)
-app.get('/api/activity/recent', (req, res) => {
+app.get('/api/activity/recent', requireRole(['manager', 'super_admin']), (req, res) => {
   try {
     const arr = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
     // group by employeeId
@@ -379,7 +541,12 @@ app.get('/api/activity/recent', (req, res) => {
       if (!byEmp[k]) byEmp[k] = [];
       byEmp[k].push(r);
     }
-    const result = Object.entries(byEmp).map(([employeeId, records]) => {
+    let entries = Object.entries(byEmp);
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      entries = entries.filter(([employeeId]) => teamEmails.includes(employeeId));
+    }
+    const result = entries.map(([employeeId, records]) => {
       const sorted = records.sort((a, b) => (a.ts < b.ts ? 1 : -1));
       return {
         employeeId,
@@ -431,21 +598,35 @@ io.on('connection', (socket) => {
     io.emit('presence:online', { userId });
   }
 
-  // On manager connection, send current online employees list
+  // On manager connection, send current online employees list (scoped to team)
   if (role === 'manager' || role === 'super_admin') {
-    socket.emit('presence:list', { users: Array.from(onlineEmployees) });
+    let users = Array.from(onlineEmployees);
+    if (role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(socket.data.userId || userId);
+      users = users.filter(u => teamEmails.includes(u));
+    }
+    socket.emit('presence:list', { users });
   }
 
   // Manager can start live view: join the viewer room and signal employee
   socket.on('live_view:start', ({ employeeId }) => {
     if (role !== 'manager' && role !== 'super_admin') return;
+    if (role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(socket.data.userId || userId);
+      if (!teamEmails.includes(employeeId)) return; // ignore if not in team
+    }
     socket.join(viewersRoom(employeeId));
     io.to(userRoom(employeeId)).emit('live_view:initiate', { by: userId });
+    appendAudit('live_view_start', { actorId: socket.data.userId || userId, employeeId });
   });
 
   // Manager can stop live view: leave the viewer room and signal employee
   socket.on('live_view:stop', ({ employeeId }) => {
     if (role !== 'manager' && role !== 'super_admin') return;
+    if (role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(socket.data.userId || userId);
+      if (!teamEmails.includes(employeeId)) return; // ignore if not in team
+    }
     socket.leave(viewersRoom(employeeId));
     io.to(userRoom(employeeId)).emit('live_view:terminate', { by: userId });
   });

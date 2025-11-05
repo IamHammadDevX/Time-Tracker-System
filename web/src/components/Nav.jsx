@@ -17,6 +17,7 @@ export default function Nav() {
           {link('/activity', 'Activity')}
           {link('/work-hours', 'Work Hours')}
           {link('/setup', 'Setup')}
+          {link('/admin', 'Admin')}
           {link('/downloads', 'Downloads')}
         </div>
         <div className="ml-auto">

@@ -12,6 +12,7 @@ export default function Setup() {
   const [name, setName] = useState('')
   const [users, setUsers] = useState([])
   const [msg, setMsg] = useState('')
+  const [tempPwdMsg, setTempPwdMsg] = useState('')
   const [error, setError] = useState('')
 
   const token = localStorage.getItem('token')
@@ -38,8 +39,10 @@ export default function Setup() {
     try {
       const r = await axios.post(`${API}/api/employees`, { email, name }, { headers })
       setUsers(prev => [r.data.user, ...prev])
+      const temp = r?.data?.login?.tempPassword
       setEmail(''); setName('')
       setMsg('Employee added')
+      setTempPwdMsg(temp ? `Temp password for ${email}: ${temp}` : '')
     } catch (e) {
       setError(e?.response?.data?.error || e.message)
     }
@@ -52,6 +55,7 @@ export default function Setup() {
         <h2 className="text-lg font-semibold">Setup</h2>
         {error && <div className="text-red-600 text-sm">{error}</div>}
         {msg && <div className="text-green-700 text-sm">{msg}</div>}
+        {tempPwdMsg && <div className="text-blue-700 text-sm">{tempPwdMsg}</div>}
 
         <section className="bg-white border rounded p-4 space-y-3">
           <div className="font-semibold">Organization</div>

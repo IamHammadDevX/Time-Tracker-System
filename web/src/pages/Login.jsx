@@ -2,11 +2,12 @@ import React from 'react'
 import { useState } from 'react'
 import axios from 'axios'
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Login() {
-  const [email, setEmail] = useState('manager@example.com')
-  const [password, setPassword] = useState('secret')
+  const [email, setEmail] = useState('admin@example.com')
+  const [password, setPassword] = useState('admin123')
+  const [role, setRole] = useState('super_admin')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -15,7 +16,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const resp = await axios.post(`${API}/api/auth/login`, { email, password, role: 'manager' })
+      const resp = await axios.post(`${API}/api/auth/login`, { email, password, role })
       localStorage.setItem('token', resp.data.token)
       location.href = '/dashboard'
     } catch (err) {
@@ -37,6 +38,13 @@ export default function Login() {
         <div>
           <label className="block text-sm">Password</label>
           <input type="password" className="mt-1 w-full border rounded px-3 py-2" value={password} onChange={e=>setPassword(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-sm">Role</label>
+          <select className="mt-1 w-full border rounded px-3 py-2" value={role} onChange={e=>setRole(e.target.value)}>
+            <option value="super_admin">Super Admin</option>
+            <option value="manager">Manager</option>
+          </select>
         </div>
         <button disabled={loading} className="w-full bg-blue-600 text-white rounded py-2 hover:bg-blue-700">
           {loading? 'Signing in…':'Login'}

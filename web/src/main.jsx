@@ -11,6 +11,7 @@ import WorkHours from './pages/WorkHours.jsx'
 import Setup from './pages/Setup.jsx'
 import Downloads from './pages/Downloads.jsx'
 import Home from './pages/Home.jsx'
+import Admin from './pages/Admin.jsx'
 
 function AppRoutes() {
   const token = localStorage.getItem('token')
@@ -25,6 +26,7 @@ function AppRoutes() {
       <Route path="/work-hours" element={token ? <WorkHours /> : <Navigate to="/login" replace />} />
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" replace />} />
       <Route path="/downloads" element={token ? <Downloads /> : <Navigate to="/login" replace />} />
+      <Route path="/admin" element={token ? <Admin /> : <Navigate to="/login" replace />} />
     </Routes>
   )
 }

@@ -9,6 +9,9 @@ export default function WorkHours() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [employees, setEmployees] = useState([])
+  const [allEmployees, setAllEmployees] = useState([])
+  const [managers, setManagers] = useState([])
+  const [selectedManager, setSelectedManager] = useState('')
   const [summaryByEmp, setSummaryByEmp] = useState({})
   const [sessionsByEmp, setSessionsByEmp] = useState({})
   const [shotsByEmp, setShotsByEmp] = useState({})
@@ -25,7 +28,11 @@ export default function WorkHours() {
   useEffect(() => {
     // Load employees, today summary, recent screenshots
     const getEmployees = axios.get(`${API}/api/employees`, { headers })
-      .then(r => setEmployees(r.data.users || []))
+      .then(r => {
+        const list = r.data.users || []
+        setAllEmployees(list)
+        setEmployees(list)
+      })
     const getSummary = axios.get(`${API}/api/work/summary/today`, { headers })
       .then(r => {
         const by = {}
@@ -57,6 +64,26 @@ export default function WorkHours() {
       })
       .finally(() => setLoading(false))
   }, [headers])
+
+  // Load managers list for super admin team switcher
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token')
+      const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+      if (payload?.role === 'super_admin') {
+        axios.get(`${API}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || []))
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Apply selected manager filter client-side (super admin only)
+  useEffect(() => {
+    if (!selectedManager) { setEmployees(allEmployees); return }
+    const filtered = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager) || String(e.managerId || '') === String(managers.find(m=>m.id===selectedManager)?.email || ''))
+    setEmployees(filtered)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedManager, allEmployees])
 
   useEffect(() => {
     // After employees loaded, fetch intervals for each
@@ -121,6 +148,17 @@ export default function WorkHours() {
             <h2 className="text-2xl md:text-3xl font-bold">Activity Timing &amp; Work Hours Tracking</h2>
             <p className="text-gray-700">Per-employee login/logout, active vs idle time, screenshots, and capture intervals.</p>
           </div>
+          {managers.length > 0 && (
+            <div>
+              <label className="block text-sm">Team Switcher (Super Admin)</label>
+              <select className="border rounded px-3 py-2 min-w-64" value={selectedManager} onChange={e=>setSelectedManager(e.target.value)}>
+                <option value="">All Managers</option>
+                {managers.map(m => (
+                  <option key={m.id} value={m.id}>{m.email} ({m.organization?.name || '-'})</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {error && <div className="text-red-600 text-sm">{error}</div>}

@@ -8,17 +8,36 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 export default function Dashboard() {
   const [org, setOrg] = useState(null)
   const [employeesCount, setEmployeesCount] = useState(0)
+  const [employees, setEmployees] = useState([])
   const [recentFiles, setRecentFiles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [managers, setManagers] = useState([])
+  const [selectedManager, setSelectedManager] = useState('')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
     const headers = { Authorization: `Bearer ${token}` }
     const getOrg = axios.get(`${API}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
-    const getUsers = axios.get(`${API}/api/employees`, { headers }).then(r => setEmployeesCount((r.data.users || []).length)).catch(()=> setEmployeesCount(0))
+    const getUsers = axios.get(`${API}/api/employees`, { headers }).then(r => { const list = r.data.users || []; setEmployees(list); setEmployeesCount(list.length) }).catch(()=> { setEmployees([]); setEmployeesCount(0) })
     const getFiles = axios.get(`${API}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
     Promise.allSettled([getOrg, getUsers, getFiles]).finally(() => setLoading(false))
   }, [])
+
+  // Load managers for super admin team switcher
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token')
+      const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+      if (payload?.role === 'super_admin') {
+        const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        axios.get(`${API}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || []))
+      }
+    } catch {}
+  }, [])
+
+  // Apply manager filter to employees and recent files
+  const filteredEmployees = selectedManager ? employees.filter(e => String(e.managerId || '') === String(selectedManager)) : employees
+  const filteredFiles = selectedManager ? recentFiles.filter(f => filteredEmployees.map(e=>e.email).includes(f.employeeId)) : recentFiles
 
   const Stat = ({label, value}) => (
     <div className="rounded-xl border bg-white p-5 shadow-sm">
@@ -53,11 +72,25 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {managers.length > 0 && (
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-sm">Team Switcher (Super Admin)</label>
+              <select className="border rounded px-3 py-2 min-w-64" value={selectedManager} onChange={e=>setSelectedManager(e.target.value)}>
+                <option value="">All Managers</option>
+                {managers.map(m => (
+                  <option key={m.id} value={m.id}>{m.email} ({m.organization?.name || '-'})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Stats */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <Stat label="Organization" value={org?.name || 'Not configured'} />
-          <Stat label="Employees" value={employeesCount} />
-          <Stat label="Recent Screenshots" value={recentFiles.length} />
+          <Stat label="Employees" value={filteredEmployees.length} />
+          <Stat label="Recent Screenshots" value={filteredFiles.length} />
           <Stat label="Status" value={loading ? 'Loading…' : 'Healthy'} />
         </section>
 
@@ -80,7 +113,7 @@ export default function Dashboard() {
             <div className="mt-3 text-sm text-gray-600">No screenshots yet. Once employees start tracking, screenshots will appear here.</div>
           )}
           <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {recentFiles.map((f, i) => (
+            {filteredFiles.map((f, i) => (
               <div key={i} className="text-center">
                 <img className="w-full h-auto border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
                 <div className="text-[10px] text-gray-600 mt-1">{new Date(f.ts || '').toLocaleString()}</div>

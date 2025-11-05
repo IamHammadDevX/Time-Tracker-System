@@ -8,8 +8,12 @@ import { io } from 'socket.io-client'
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function LiveView() {
-  const [employeeId, setEmployeeId] = useState('employee@example.com')
+  const [employeeId, setEmployeeId] = useState('')
   const [onlineEmployees, setOnlineEmployees] = useState([])
+  const [filteredOnline, setFilteredOnline] = useState([])
+  const [allEmployees, setAllEmployees] = useState([])
+  const [managers, setManagers] = useState([])
+  const [selectedManager, setSelectedManager] = useState('')
   const [status, setStatus] = useState('idle') // idle | active | offline
   const [frames, setFrames] = useState([]) // [{b64, ts}]
   const [assignedIntervalSec, setAssignedIntervalSec] = useState(null)
@@ -19,8 +23,16 @@ export default function LiveView() {
   const socketRef = useRef(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    const s = io(API, { query: { role: 'manager', userId: 'manager@example.com' }, extraHeaders: { Authorization: `Bearer ${token}` } })
+    const token = localStorage.getItem('token') || ''
+    let role = 'manager'
+    let userId = ''
+    try {
+      const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+      role = payload?.role || 'manager'
+      userId = payload?.email || payload?.userId || ''
+    } catch {}
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const s = io(API, { query: { role, userId }, extraHeaders: headers })
     socketRef.current = s
     s.on('live_view:frame', (payload) => {
       if (payload?.employeeId === employeeId) {
@@ -36,8 +48,9 @@ export default function LiveView() {
     })
     // Presence events
     s.on('presence:list', ({ users }) => {
-      setOnlineEmployees(users || [])
-      if (!employeeId && users?.length) setEmployeeId(users[0])
+      const list = Array.isArray(users) ? users : []
+      setOnlineEmployees(list)
+      if (!employeeId && list.length) setEmployeeId(list[0])
     })
     s.on('presence:online', ({ userId }) => {
       setOnlineEmployees(prev => Array.from(new Set([userId, ...prev])))
@@ -48,6 +61,28 @@ export default function LiveView() {
     })
     return () => { s.disconnect() }
   }, [employeeId])
+
+  // Load employees and managers for super admin team switcher
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    const headers = { Authorization: `Bearer ${token}` }
+    const loadEmployees = axios.get(`${API}/api/employees`, { headers }).then(r => setAllEmployees(r.data?.users || [])).catch(()=>{})
+    let role = ''
+    try { const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); role = payload?.role } catch {}
+    if (role === 'super_admin') {
+      axios.get(`${API}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || [])).catch(()=>{})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Apply filter to online employees when manager selected
+  useEffect(() => {
+    if (!selectedManager) { setFilteredOnline(onlineEmployees); return }
+    const team = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager) || String(e.managerId || '') === String(managers.find(m=>m.id===selectedManager)?.email || ''))
+      .map(e => e.email)
+    const filtered = onlineEmployees.filter(e => team.includes(e))
+    setFilteredOnline(filtered)
+  }, [selectedManager, onlineEmployees, allEmployees, managers])
 
   // Auto-start live view when selecting an employee
   useEffect(() => {
@@ -108,13 +143,24 @@ export default function LiveView() {
             <p className="text-gray-700">Monitor an employee’s current activity in real-time.</p>
           </div>
           <div className="flex items-end gap-2 flex-wrap">
+            {managers.length > 0 && (
+              <div>
+                <label className="block text-sm">Team Switcher (Super Admin)</label>
+                <select className="border rounded px-3 py-2 min-w-64" value={selectedManager} onChange={e=>setSelectedManager(e.target.value)}>
+                  <option value="">All Managers</option>
+                  {managers.map(m => (
+                    <option key={m.id} value={m.id}>{m.email} ({m.organization?.name || '-'})</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm">Online Employees</label>
               <select className="border rounded px-3 py-2 min-w-64"
                 value={employeeId}
                 onChange={e=>setEmployeeId(e.target.value)}>
                 <option value="">Select employee…</option>
-                {onlineEmployees.map(email => (
+                {(filteredOnline.length ? filteredOnline : onlineEmployees).map(email => (
                   <option key={email} value={email}>{email}</option>
                 ))}
               </select>
