@@ -13,7 +13,7 @@ export default function Nav() {
         <div className="flex gap-2 ml-4">
           {link('/dashboard', 'Dashboard')}
           {link('/live', 'Live View')}
-          {link('/screenshots', 'Reports')}
+  {link('/report', 'Reports')}
           {link('/activity', 'Activity')}
           {link('/work-hours', 'Work Hours')}
           {link('/setup', 'Setup')}

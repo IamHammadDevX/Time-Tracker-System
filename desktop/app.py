@@ -81,6 +81,9 @@ class TimeTrackerApp:
         self.live_thread = None
         self.capture_interval_seconds = SCREENSHOT_INTERVAL_SECONDS
 
+        # Resolve backend URL proactively with health-check and fallbacks
+        self.backend_url = self._resolve_backend_url()
+
         self._build_ui()
 
     def _build_ui(self):
@@ -97,7 +100,7 @@ class TimeTrackerApp:
         notebook = ttk.Notebook(container)
         notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Sign In tab
+        # Sign In tab (only tab visible)
         login_tab = ttk.Frame(notebook, padding=16)
         notebook.add(login_tab, text='Sign In')
 
@@ -113,48 +116,21 @@ class TimeTrackerApp:
         for i in range(3):
             login_tab.columnconfigure(i, weight=1)
 
-        # Tracking tab
-        track_tab = ttk.Frame(notebook, padding=16)
-        notebook.add(track_tab, text='Tracking')
-
-        self.live_indicator = tk.StringVar(value='Live View: inactive')
-        self.live_indicator_label = ttk.Label(track_tab, textvariable=self.live_indicator, style='Muted.TLabel')
-        # Hide live view indicator in Tracking tab
-        self.live_indicator_label.pack_forget()
-
-        self.last_upload_var = tk.StringVar(value='Last upload: -')
-        self.last_upload_label = ttk.Label(track_tab, textvariable=self.last_upload_var, style='Muted.TLabel')
-        # Hide last upload label in Tracking tab
-        self.last_upload_label.pack_forget()
-
+        # Tracking and Live View tabs removed; controls moved to header
+        self.live_indicator = tk.StringVar(value='')
+        self.last_upload_var = tk.StringVar(value='')
         self.progress_var = tk.IntVar(value=0)
-        self.progress = ttk.Progressbar(track_tab, orient=tk.HORIZONTAL, length=420, mode='determinate')
+        self.progress = ttk.Progressbar(login_tab, orient=tk.HORIZONTAL, length=420, mode='determinate')
         self.progress.configure(maximum=self.capture_interval_seconds, variable=self.progress_var)
-        # Hide progress bar in Tracking tab
-        self.progress.pack_forget()
         self.countdown_var = tk.StringVar(value=f'Next capture in {self.capture_interval_seconds}s')
-        self.countdown_label = ttk.Label(track_tab, textvariable=self.countdown_var, style='Muted.TLabel')
-        # Hide next capture countdown in Tracking tab
-        self.countdown_label.pack_forget()
 
-        controls = ttk.Frame(track_tab)
-        controls.pack(fill=tk.X, pady=(16, 0))
-        self.start_btn = ttk.Button(controls, text='Start Tracking', style='Success.TButton', state=tk.DISABLED, command=self.start_tracking)
+        # Header controls: Start/Stop Tracking
+        header_controls = tk.Frame(header, bg=self.color_bg)
+        header_controls.pack(side=tk.RIGHT, padx=8, pady=8)
+        self.start_btn = ttk.Button(header_controls, text='Start', style='Success.TButton', state=tk.DISABLED, command=self.start_tracking)
         self.start_btn.pack(side=tk.LEFT)
-        self.stop_btn = ttk.Button(controls, text='Stop Tracking', style='Danger.TButton', state=tk.DISABLED, command=self.stop_tracking)
-        self.stop_btn.pack(side=tk.LEFT, padx=8)
-
-        # Live View tab (status + controls)
-        live_tab = ttk.Frame(notebook, padding=16)
-        notebook.add(live_tab, text='Live View')
-        ttk.Label(live_tab, text='Live View status', style='Header.TLabel').pack(anchor='w')
-        # this will hide the tab of live view
-        self.live_tab.pack_forget()
-        # Reuse live_indicator for visibility
-        ttk.Label(live_tab, textvariable=self.live_indicator, style='Muted.TLabel').pack(anchor='w', pady=(6, 0))
-        self.live_last_frame_var = tk.StringVar(value='Last live frame: -')
-        ttk.Label(live_tab, textvariable=self.live_last_frame_var, style='Muted.TLabel').pack(anchor='w', pady=(6, 12))
-        ttk.Button(live_tab, text='Disable Live View', style='Danger.TButton', command=self.disable_live_view).pack(anchor='w')
+        self.stop_btn = ttk.Button(header_controls, text='Stop', style='Danger.TButton', state=tk.DISABLED, command=self.stop_tracking)
+        self.stop_btn.pack(side=tk.LEFT, padx=6)
 
     def login(self):
         email = self.email.get().strip()
@@ -162,23 +138,35 @@ class TimeTrackerApp:
         if not email or not password:
             messagebox.showwarning('Missing', 'Email and password are required.')
             return
+        # Ensure backend is reachable before attempting login
+        if not self._ensure_server():
+            messagebox.showerror('Login failed', f'Server not reachable at {self.backend_url}. Ensure backend is running on port 4000.')
+            return
         try:
-            resp = requests.post(f'{BACKEND_URL}/api/auth/login', json={'email': email, 'password': password, 'role': 'employee'})
+            resp = requests.post(f'{self.backend_url}/api/auth/login', json={'email': email, 'password': password, 'role': 'employee'}, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             self.token = data.get('token')
             if not self.token:
                 raise ValueError('No token received')
-        except Exception as e:
-            messagebox.showerror('Login failed', f'{e}')
+        except requests.exceptions.HTTPError as e:
+            messagebox.showerror('Login failed', f'HTTP error: {e}')
+            return
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror('Login failed', f'Connection error: {e}')
             return
 
         self.status_var.set(f'Logged in as {email}')
         self.header_status.configure(text=f'Logged in as {email}')
-        # Connect Socket.IO for live view signaling
+        # Connect Socket.IO for live view signaling (UI hidden for employees)
         self._connect_socket(email)
-        # Fetch capture interval assigned by manager
+        # Fetch capture interval and auto-start tracking
         self._fetch_capture_interval()
+        try:
+            if not self.tracking:
+                self.start_tracking()
+        except Exception:
+            pass
 
     def _connect_socket(self, email):
         try:
@@ -192,7 +180,7 @@ class TimeTrackerApp:
             # Connect with query string to pass identity/role
             qs = urlencode({'userId': email, 'role': 'employee'})
             self.sio.connect(
-                f"{BACKEND_URL}?{qs}",
+                f"{self.backend_url}?{qs}",
                 transports=['websocket'],
                 headers={'Authorization': f'Bearer {self.token}'},
                 socketio_path='socket.io',
@@ -205,21 +193,20 @@ class TimeTrackerApp:
     def _fetch_capture_interval(self):
         try:
             headers = { 'Authorization': f'Bearer {self.token}' } if self.token else {}
-            resp = requests.get(f'{BACKEND_URL}/api/capture-interval', headers=headers, timeout=10)
+            resp = requests.get(f'{self.backend_url}/api/capture-interval', headers=headers, timeout=10)
             data = resp.json()
             secs = int(data.get('intervalSeconds') or 0)
             if data.get('assigned') and secs > 0:
                 self.capture_interval_seconds = secs
+            # Always enable tracking; fall back to default interval if not assigned
+            try:
                 self.progress.configure(maximum=self.capture_interval_seconds)
-                self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
-                # Enable tracking once interval is assigned
-                self.start_btn.configure(state=tk.NORMAL)
-                mins = secs // 60
-                self.status_var.set(f'Interval assigned: {mins} minute(s)')
-            else:
-                # Disable tracking until manager assigns interval
-                self.start_btn.configure(state=tk.DISABLED)
-                self.status_var.set('Awaiting manager interval assignment')
+            except Exception:
+                pass
+            self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
+            self.start_btn.configure(state=tk.NORMAL)
+            mins = self.capture_interval_seconds // 60
+            self.status_var.set(f'Interval: {mins} minute(s)')
         except Exception as e:
             print('[interval] fetch error:', e)
             self.start_btn.configure(state=tk.DISABLED)
@@ -286,7 +273,7 @@ class TimeTrackerApp:
         # notify backend start
         try:
             headers = { 'Authorization': f'Bearer {self.token}' }
-            requests.post(f'{BACKEND_URL}/api/work/start', headers=headers, timeout=10)
+            requests.post(f'{self.backend_url}/api/work/start', headers=headers, timeout=10)
         except Exception as e:
             print('[work] start error:', e)
 
@@ -314,7 +301,7 @@ class TimeTrackerApp:
         # notify backend stop
         try:
             headers = { 'Authorization': f'Bearer {self.token}' }
-            requests.post(f'{BACKEND_URL}/api/work/stop', headers=headers, timeout=10)
+            requests.post(f'{self.backend_url}/api/work/stop', headers=headers, timeout=10)
         except Exception as e:
             print('[work] stop error:', e)
 
@@ -344,7 +331,7 @@ class TimeTrackerApp:
             files = { 'screenshot': ('screenshot.jpg', jpeg_bytes, 'image/jpeg') }
             data = { 'employeeId': self.email.get() }
             headers = { 'Authorization': f'Bearer {self.token}' } if self.token else {}
-            resp = requests.post(f'{BACKEND_URL}/api/uploads/screenshot', files=files, data=data, headers=headers, timeout=30)
+            resp = requests.post(f'{self.backend_url}/api/uploads/screenshot', files=files, data=data, headers=headers, timeout=30)
             resp.raise_for_status()
             # update UI on successful upload
             self.last_upload_var.set(f"Last upload: {time.strftime('%H:%M:%S')} ✅")
@@ -438,7 +425,7 @@ class TimeTrackerApp:
                 delta = max(0, current_idle - prev_idle)
                 prev_idle = current_idle
                 headers = { 'Authorization': f'Bearer {self.token}' }
-                requests.post(f'{BACKEND_URL}/api/work/heartbeat', json={ 'idleDeltaSeconds': delta }, headers=headers, timeout=10)
+                requests.post(f'{self.backend_url}/api/work/heartbeat', json={ 'idleDeltaSeconds': delta }, headers=headers, timeout=10)
             except Exception as e:
                 print('[work] heartbeat error:', e)
 
@@ -470,6 +457,50 @@ class TimeTrackerApp:
             if remaining > 0:
                 self.root.after(1000, lambda: tick(remaining - 1))
         tick(seconds)
+
+    def _resolve_backend_url(self) -> str:
+        # Try env-provided URL, then 127.0.0.1, then localhost
+        candidates = []
+        env_url = BACKEND_URL
+        if env_url:
+            candidates.append(env_url)
+        candidates.extend(['http://127.0.0.1:4000', 'http://localhost:4000'])
+        for url in candidates:
+            try:
+                r = requests.get(f'{url}/health', timeout=2)
+                if r.ok:
+                    try:
+                        self.header_status.configure(text=f'Server: {url}')
+                    except Exception:
+                        pass
+                    return url
+            except Exception:
+                continue
+        try:
+            self.header_status.configure(text=f'Server unreachable')
+        except Exception:
+            pass
+        return env_url or 'http://localhost:4000'
+
+    def _ensure_server(self) -> bool:
+        try:
+            r = requests.get(f'{self.backend_url}/health', timeout=3)
+            return bool(r.ok)
+        except Exception:
+            # Retry on alternate local URLs
+            for url in ['http://127.0.0.1:4000', 'http://localhost:4000']:
+                try:
+                    r = requests.get(f'{url}/health', timeout=3)
+                    if r.ok:
+                        self.backend_url = url
+                        try:
+                            self.header_status.configure(text=f'Server: {url}')
+                        except Exception:
+                            pass
+                        return True
+                except Exception:
+                    continue
+        return False
 
 
 def main():

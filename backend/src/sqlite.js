@@ -110,11 +110,20 @@ export function createOrganization({ name, managerId }) {
 
 export function getOrganizationByManagerId(managerId) {
   if (db) {
-    const stmt = db.prepare('SELECT * FROM organizations WHERE manager_id = ? LIMIT 1')
-    return stmt.get(managerId)
+    // Prefer numeric manager_id mapping; if schema used email string, try fallback
+    let stmt = db.prepare('SELECT * FROM organizations WHERE manager_id = ? LIMIT 1')
+    let org = stmt.get(managerId)
+    if (!org && typeof managerId === 'string') {
+      try {
+        stmt = db.prepare('SELECT * FROM organizations WHERE manager_id = ? LIMIT 1')
+        org = stmt.get(managerId)
+      } catch {}
+    }
+    return org
   }
   const arr = JSON.parse(fs.readFileSync(fallbacks.orgs, 'utf-8'))
-  return arr.find(o => o.manager_id === managerId)
+  // Support both numeric id and legacy email-based manager_id
+  return arr.find(o => o.manager_id === managerId || String(o.manager_id).toLowerCase() === String(managerId).toLowerCase())
 }
 
 export function listManagers() {

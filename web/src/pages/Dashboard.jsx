@@ -99,7 +99,7 @@ export default function Dashboard() {
           <h3 className="text-lg font-semibold">Quick Actions</h3>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <Quick to="/live" title="Live View" desc="See employee screens in real-time." icon={<SvgLive/>} />
-            <Quick to="/screenshots" title="Screenshots" desc="Browse captured activity over time." icon={<SvgCamera/>} />
+            <Quick to="/report" title="Report" desc="Filter screenshots and sessions by date." icon={<SvgCamera/>} />
             <Quick to="/activity" title="Activity" desc="Review recent activity by employee." icon={<SvgChart/>} />
             <Quick to="/setup" title="Setup" desc="Configure organization and invite users." icon={<SvgCog/>} />
             <Quick to="/downloads" title="Downloads" desc="Get the desktop tracker client." icon={<SvgDownload/>} />

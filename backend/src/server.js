@@ -16,6 +16,7 @@ import bcrypt from 'bcryptjs';
 dotenv.config();
 
 const PORT = process.env.PORT || 4000;
+const HOST = process.env.HOST || '127.0.0.1';
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
@@ -104,6 +105,14 @@ app.use('/downloads', express.static(desktopSrcPath));
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
+
+// Startup warnings for production hardening
+if (JWT_SECRET === 'dev_secret') {
+  console.warn('[security] Using default JWT_SECRET. Set a strong JWT_SECRET for production.');
+}
+if (!ALLOWED_ORIGINS.length) {
+  console.warn('[cors] ALLOWED_ORIGINS not set. CORS is wide open (*) for development.');
+}
 
 // Seed default Super Admin on startup
 seedDefaultSuperAdmin();
@@ -530,6 +539,82 @@ app.get('/api/uploads/list', requireRole(['manager', 'super_admin']), async (req
   }
 });
 
+// Query uploaded screenshots by employee and date range
+app.get('/api/uploads/query', requireRole(['manager', 'super_admin']), async (req, res) => {
+  try {
+    const { employeeId, from, to } = req.query || {};
+    let meta = [];
+    try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch {}
+    // Manager scoping to team
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      meta = meta.filter(m => m.employeeId && teamEmails.includes(m.employeeId));
+    }
+    // Filter by employee
+    if (employeeId) {
+      meta = meta.filter(m => String(m.employeeId).toLowerCase() === String(employeeId).toLowerCase());
+    }
+    // Filter by date range (ISO)
+    const fromMs = from ? new Date(from).getTime() : null;
+    const toMs = to ? new Date(to).getTime() : null;
+    if (fromMs) meta = meta.filter(m => new Date(m.ts).getTime() >= fromMs);
+    if (toMs) meta = meta.filter(m => new Date(m.ts).getTime() <= toMs);
+    // Sort by time ascending
+    meta.sort((a, b) => (a.ts > b.ts ? 1 : -1));
+    res.json({ files: meta });
+  } catch (err) {
+    console.error('[upload:query] error:', err);
+    res.status(500).json({ error: 'Query failed' });
+  }
+});
+
+// Sessions by date range with per-session details
+app.get('/api/work/sessions/range', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    const { employeeId, from, to } = req.query || {};
+    const sessions = readSessions();
+    const fromStr = from ? String(from).slice(0,10) : null;
+    const toStr = to ? String(to).slice(0,10) : null;
+    const inRange = sessions.filter(s => {
+      const d = s.date;
+      if (fromStr && d < fromStr) return false;
+      if (toStr && d > toStr) return false;
+      return true;
+    });
+    const byEmp = {};
+    for (const s of inRange) {
+      const k = s.employeeId;
+      if (employeeId && String(k).toLowerCase() !== String(employeeId).toLowerCase()) continue;
+      if (!byEmp[k]) byEmp[k] = [];
+      const startMs = new Date(s.startedAt).getTime();
+      const endMs = s.endedAt ? new Date(s.endedAt).getTime() : Date.now();
+      const activeSeconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
+      const idleSeconds = s.idleSeconds || 0;
+      const netActiveSeconds = Math.max(0, activeSeconds - idleSeconds);
+      byEmp[k].push({
+        id: s.id,
+        date: s.date,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        isActive: !!s.isActive,
+        activeSeconds,
+        idleSeconds,
+        netActiveSeconds,
+      });
+    }
+    let entries = Object.entries(byEmp);
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      entries = entries.filter(([eid]) => teamEmails.includes(eid));
+    }
+    const result = entries.map(([employeeId, sessions]) => ({ employeeId, sessions }));
+    res.json({ employees: result, from: fromStr, to: toStr });
+  } catch (e) {
+    console.error('[work:sessions_range] error:', e);
+    res.status(500).json({ error: 'Sessions range failed' });
+  }
+});
+
 // Activity: recent screenshots grouped by employee (dev helper)
 app.get('/api/activity/recent', requireRole(['manager', 'super_admin']), (req, res) => {
   try {
@@ -657,8 +742,9 @@ io.on('connection', (socket) => {
 // DB connection
 connectMongo(process.env.MONGO_URI);
 
-httpServer.listen(PORT, () => {
-  console.log(`[server] API listening on port ${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  const base = `http://${HOST}:${PORT}`;
+  console.log(`[server] API listening at ${base}`);
   console.log(`[server] Upload dir: ${uploadPath}`);
 });
 
@@ -693,3 +779,65 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('[server] Unhandled rejection:', err);
 });
+
+
+// ---------- BEGIN: compatibility proxy to support hardcoded :4000 frontend ----------
+// If the backend starts on a different port than 4000, create a tiny proxy
+// that listens on 4000 and forwards requests to the real server port.
+// This helps dev setups where the frontend expects http://localhost:4000.
+import http from 'http';
+
+const ACTUAL_PORT = Number(PORT) || 4000;
+const LEGACY_PORT = 4000;
+
+// start the main server (this is already in your file):
+httpServer.listen(PORT, HOST, () => {
+  const base = `http://${HOST}:${PORT}`;
+  console.log(`[server] API listening at ${base}`);
+  console.log(`[server] Upload dir: ${uploadPath}`);
+
+  // only create proxy when needed and when LEGACY_PORT !== ACTUAL_PORT
+  if (Number(ACTUAL_PORT) !== Number(LEGACY_PORT)) {
+    try {
+      const proxy = http.createServer((req, res) => {
+        // forward request to actual server
+        const options = {
+          hostname: HOST,
+          port: ACTUAL_PORT,
+          path: req.url,
+          method: req.method,
+          headers: req.headers
+        };
+
+        const proxied = http.request(options, proxRes => {
+          res.writeHead(proxRes.statusCode, proxRes.headers);
+          proxRes.pipe(res, { end: true });
+        });
+
+        proxied.on('error', err => {
+          console.error('[proxy] Forward error:', err.message);
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Proxy forward error' }));
+        });
+
+        // pipe request body
+        req.pipe(proxied, { end: true });
+      });
+
+      proxy.on('error', (err) => {
+        if (err && err.code === 'EADDRINUSE') {
+          console.warn(`[proxy] Port ${LEGACY_PORT} already in use. Skipping compatibility proxy.`);
+        } else {
+          console.warn('[proxy] Error starting compatibility proxy:', err);
+        }
+      });
+
+      proxy.listen(LEGACY_PORT, '127.0.0.1', () => {
+        console.log(`[proxy] Compatibility proxy listening on http://127.0.0.1:${LEGACY_PORT} -> http://${HOST}:${ACTUAL_PORT}`);
+      });
+    } catch (e) {
+      console.warn('[proxy] Failed to start compatibility proxy:', e?.message || e);
+    }
+  }
+});
+// ---------- END: compatibility proxy ----------
