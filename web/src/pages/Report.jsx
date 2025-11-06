@@ -27,8 +27,26 @@ export default function Report() {
       const employeeId = (username || selectedEmployee || '').trim()
       const params = {}
       if (employeeId) params.employeeId = employeeId
-      if (fromDate) params.from = new Date(fromDate).toISOString()
-      if (toDate) params.to = new Date(toDate).toISOString()
+      // Normalize date-only inputs to inclusive day range
+      const toStartISO = (ds) => {
+        if (!ds) return null
+        const base = new Date(`${ds}T00:00:00`)
+        return new Date(base).toISOString()
+      }
+      const toEndISO = (ds) => {
+        if (!ds) return null
+        const base = new Date(`${ds}T00:00:00`)
+        const end = new Date(base.getTime() + 24*60*60*1000 - 1)
+        return end.toISOString()
+      }
+      if (fromDate && !toDate) {
+        // Single-date search: cover the full selected day
+        params.from = toStartISO(fromDate)
+        params.to = toEndISO(fromDate)
+      } else {
+        if (fromDate) params.from = toStartISO(fromDate)
+        if (toDate) params.to = toEndISO(toDate)
+      }
       const [shotsRes, sessRes] = await Promise.all([
         axios.get(`${API}/api/uploads/query`, { headers, params }),
         axios.get(`${API}/api/work/sessions/range`, { headers, params })
