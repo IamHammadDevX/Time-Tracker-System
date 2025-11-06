@@ -170,25 +170,24 @@ class TimeTrackerApp:
 
     def _connect_socket(self, email):
         try:
-            self.sio = socketio.Client()
+            self.sio = socketio.Client(reconnection=True, reconnection_attempts=10, reconnection_delay=1)
             # Register event handlers
             self.sio.on('live_view:initiate', self._on_live_view_start)
             self.sio.on('live_view:terminate', self._on_live_view_stop)
             self.sio.on('live_view:frame', lambda data: None)  # managers receive frames; employee ignores
             # Interval assignment push from backend
             self.sio.on('interval:assigned', self._on_interval_assigned)
-            # Connect with query string to pass identity/role
-            qs = urlencode({'userId': email, 'role': 'employee'})
+            # Connect with JWT via auth and include userId in query for context
+            qs = urlencode({'userId': email})
             self.sio.connect(
                 f"{self.backend_url}?{qs}",
-                transports=['websocket'],
-                headers={'Authorization': f'Bearer {self.token}'},
+                auth={'token': self.token},
                 socketio_path='socket.io',
                 wait=True,
-                wait_timeout=5,
+                wait_timeout=12,
             )
         except Exception as e:
-            print('[socket] connection error:', e)
+            print('[socket] connection error:', repr(e))
 
     def _fetch_capture_interval(self):
         try:

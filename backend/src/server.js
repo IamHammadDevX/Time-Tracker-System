@@ -49,9 +49,23 @@ function readUsers(){
   try { return JSON.parse(fs.readFileSync(usersFile, 'utf-8')); } catch { return []; }
 }
 function writeUsers(arr){ fs.writeFileSync(usersFile, JSON.stringify(arr, null, 2)); }
-function getTeamEmailsForManager(managerUid){
+function getTeamEmailsForManager(managerKey){
   const users = readUsers();
-  return users.filter(u => u.role === 'employee' && u.managerId === managerUid).map(u => u.email);
+  // Accept either manager numeric id or email; resolve both forms
+  const keys = new Set();
+  const keyStr = String(managerKey || '').trim();
+  if (keyStr) keys.add(keyStr);
+  try {
+    const managers = listManagers();
+    const m = managers.find(x => String(x.id) === keyStr || String(x.email).toLowerCase() === keyStr.toLowerCase());
+    if (m) {
+      keys.add(String(m.id));
+      keys.add(String(m.email));
+    }
+  } catch {}
+  return users
+    .filter(u => u.role === 'employee' && keys.has(String(u.managerId)))
+    .map(u => u.email);
 }
 function appendAudit(type, details){
   try {
@@ -77,9 +91,11 @@ const upload = multer({ storage });
 
 const app = express();
 const httpServer = createServer(app);
+// Socket.IO: allow all origins because desktop clients are non-browser
+// and rely on JWT for authorization. Express CORS remains restricted.
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*',
+    origin: '*',
     credentials: false
   }
 });
@@ -653,12 +669,16 @@ const onlineEmployees = new Set();
 
 io.use((socket, next) => {
   try {
+    // Accept token from Authorization header or Socket.IO auth payload
     const authHeader = socket.handshake.headers?.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return next(); // allow dev usage without auth
+    const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const authToken = socket.handshake.auth?.token || null;
+    const qpToken = socket.handshake.query?.token || null; // fallback if needed
+    const token = headerToken || authToken || qpToken;
+    if (!token) return next();
     const payload = jwt.verify(token, JWT_SECRET);
-    // attach to socket for downstream usage
-    socket.data.userId = payload?.email || payload?.userId; // email identifier (employees)
+    // attach to socket for downstream usage (production: trust only verified token)
+    socket.data.userId = payload?.email || payload?.userId; // email identifier (employees/managers)
     socket.data.uid = payload?.uid || null; // numeric/uuid id (managers)
     socket.data.role = payload?.role || 'employee';
     next();
@@ -670,10 +690,11 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   const qpUserId = socket.handshake.query?.userId;
-  const qpRole = socket.handshake.query?.role;
+  const qpUid = socket.handshake.query?.uid;
   const userId = socket.data.userId || qpUserId;
-  const role = socket.data.role || qpRole || 'employee';
-  const managerUid = socket.data.uid || null;
+  // Production: role must come from verified token. Ignore query role.
+  const role = socket.data.role || 'employee';
+  const managerUid = socket.data.uid || qpUid || null;
 
   if (userId) {
     socket.join(userRoom(userId));
@@ -697,6 +718,7 @@ io.on('connection', (socket) => {
 
   // Manager can start live view: join the viewer room and signal employee
   socket.on('live_view:start', ({ employeeId }) => {
+    // Only allow verified manager/super_admin via JWT
     if (role !== 'manager' && role !== 'super_admin') return;
     if (role === 'manager') {
       const teamEmails = getTeamEmailsForManager(managerUid || socket.data.uid || socket.data.userId || userId);

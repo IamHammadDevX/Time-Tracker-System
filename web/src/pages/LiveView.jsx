@@ -24,15 +24,15 @@ export default function LiveView() {
 
   useEffect(() => {
     const token = localStorage.getItem('token') || ''
-    let role = 'manager'
     let userId = ''
+    let uid = ''
     try {
       const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
-      role = payload?.role || 'manager'
       userId = payload?.email || payload?.userId || ''
+      uid = payload?.uid || ''
     } catch {}
-    const headers = token ? { Authorization: `Bearer ${token}` } : {}
-    const s = io(API, { query: { role, userId }, extraHeaders: headers })
+    // Send JWT via Socket.IO auth for production; include uid/userId for audit context
+    const s = io(API, { auth: { token }, query: { userId, uid } })
     socketRef.current = s
     s.on('live_view:frame', (payload) => {
       if (payload?.employeeId === employeeId) {
