@@ -38,7 +38,7 @@ try {
   `)
   console.log('[sqlite] Using better-sqlite3 at', dbPath)
 } catch (e) {
-  console.warn('[sqlite] better-sqlite3 not available, falling back to JSON store:', e?.message || e)
+  console.info('[sqlite] better-sqlite3 not available; using JSON store for dev:', e?.message || e)
   for (const p of Object.values(fallbacks)) {
     if (!fs.existsSync(p)) fs.writeFileSync(p, '[]')
   }

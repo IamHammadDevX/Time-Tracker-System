@@ -764,12 +764,6 @@ io.on('connection', (socket) => {
 // DB connection
 connectMongo(process.env.MONGO_URI);
 
-httpServer.listen(PORT, HOST, () => {
-  const base = `http://${HOST}:${PORT}`;
-  console.log(`[server] API listening at ${base}`);
-  console.log(`[server] Upload dir: ${uploadPath}`);
-});
-
 httpServer.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
     console.error(`[server] Port ${PORT} is already in use. Is another instance running?`);
@@ -813,8 +807,8 @@ const ACTUAL_PORT = Number(PORT) || 4000;
 const LEGACY_PORT = 4000;
 
 // start the main server (this is already in your file):
-httpServer.listen(PORT, HOST, () => {
-  const base = `http://${HOST}:${PORT}`;
+httpServer.listen(PORT, () => {
+  const base = `http://localhost:${PORT}`;
   console.log(`[server] API listening at ${base}`);
   console.log(`[server] Upload dir: ${uploadPath}`);
 
