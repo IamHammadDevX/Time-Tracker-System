@@ -1,8 +1,17 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 export default function Nav() {
   const { pathname } = useLocation()
+  const role = useMemo(() => {
+    try {
+      const token = localStorage.getItem('token')
+      const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
+      return payload?.role || ''
+    } catch {
+      return ''
+    }
+  }, [])
   const link = (to, label) => (
     <Link className={`px-3 py-2 rounded text-sm ${pathname===to? 'bg-blue-600 text-white':'hover:bg-blue-100'}`} to={to}>{label}</Link>
   )
@@ -17,7 +26,7 @@ export default function Nav() {
           {link('/activity', 'Activity')}
           {link('/work-hours', 'Work Hours')}
           {link('/setup', 'Setup')}
-          {link('/admin', 'Admin')}
+          {role === 'super_admin' && link('/admin', 'Admin')}
           {link('/downloads', 'Downloads')}
         </div>
         <div className="ml-auto">

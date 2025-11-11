@@ -14,6 +14,7 @@ export default function Admin() {
   const [logs, setLogs] = useState([])
   const [filterManagerId, setFilterManagerId] = useState('')
   const [filterEmployeeId, setFilterEmployeeId] = useState('')
+  const [employees, setEmployees] = useState([])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -40,6 +41,15 @@ export default function Admin() {
     } catch {}
   }
 
+  const loadEmployees = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      const r = await axios.get(`${API}/api/employees`, { headers })
+      setEmployees(r.data?.users || [])
+    } catch {}
+  }
+
   const loadLogs = async () => {
     try {
       const token = localStorage.getItem('token')
@@ -55,6 +65,7 @@ export default function Admin() {
   useEffect(() => {
     loadManagers()
     loadLogs()
+    loadEmployees()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -62,6 +73,32 @@ export default function Admin() {
     loadLogs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterManagerId, filterEmployeeId])
+
+  const removeManager = async (id) => {
+    setMsg(''); setError('')
+    try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      await axios.delete(`${API}/api/admin/managers/${id}`, { headers })
+      setMsg('Manager removed')
+      loadManagers()
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message)
+    }
+  }
+
+  const removeEmployee = async (email) => {
+    setMsg(''); setError('')
+    try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      await axios.delete(`${API}/api/employees/${encodeURIComponent(email)}`, { headers })
+      setMsg('Employee removed')
+      loadEmployees()
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message)
+    }
+  }
 
   return (
     <div className="min-h-full">
@@ -97,6 +134,7 @@ export default function Admin() {
                   <th className="py-2 px-2">Manager</th>
                   <th className="py-2 px-2">Organization</th>
                   <th className="py-2 px-2">Employees</th>
+                  <th className="py-2 px-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -105,10 +143,44 @@ export default function Admin() {
                     <td className="py-2 px-2">{m.email}</td>
                     <td className="py-2 px-2">{m.organization?.name || '-'}</td>
                     <td className="py-2 px-2">{m.employeeCount}</td>
+                    <td className="py-2 px-2">
+                      <button className="px-2 py-1 rounded bg-red-600 text-white" onClick={()=>removeManager(m.id)}>Remove</button>
+                    </td>
                   </tr>
                 ))}
                 {managers.length === 0 && (
                   <tr><td className="py-2 px-2 text-gray-600" colSpan="3">No managers yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="bg-white border rounded p-4">
+          <div className="font-semibold mb-2">Employees</div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b">
+                  <th className="py-2 px-2">Email</th>
+                  <th className="py-2 px-2">Name</th>
+                  <th className="py-2 px-2">Manager</th>
+                  <th className="py-2 px-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((u, i) => (
+                  <tr key={i} className="border-b">
+                    <td className="py-2 px-2">{u.email}</td>
+                    <td className="py-2 px-2">{u.name || '-'}</td>
+                    <td className="py-2 px-2">{u.managerId || '-'}</td>
+                    <td className="py-2 px-2">
+                      <button className="px-2 py-1 rounded bg-red-600 text-white" onClick={()=>removeEmployee(u.email)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+                {employees.length === 0 && (
+                  <tr><td className="py-2 px-2 text-gray-600" colSpan="4">No employees.</td></tr>
                 )}
               </tbody>
             </table>

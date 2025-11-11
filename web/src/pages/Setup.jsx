@@ -61,6 +61,17 @@ export default function Setup() {
     }
   }
 
+  const removeEmp = async (email) => {
+    setMsg(''); setError('')
+    try {
+      await axios.delete(`${API}/api/employees/${encodeURIComponent(email)}`, { headers })
+      setMsg('Employee removed')
+      setUsers(prev => prev.filter(u => u.email !== email))
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message)
+    }
+  }
+
   return (
     <div className="min-h-full">
       <Nav />
@@ -94,11 +105,31 @@ export default function Setup() {
             )}
             <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={addEmp}>Add</button>
           </div>
-          <ul className="text-sm list-disc pl-5">
-            {users.map((u, i) => (
-              <li key={i}>{u.email} {u.name? `— ${u.name}`:''}</li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b">
+                  <th className="py-2 px-2">Email</th>
+                  <th className="py-2 px-2">Name</th>
+                  <th className="py-2 px-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u, i) => (
+                  <tr key={i} className="border-b">
+                    <td className="py-2 px-2">{u.email}</td>
+                    <td className="py-2 px-2">{u.name || '-'}</td>
+                    <td className="py-2 px-2">
+                      <button className="px-2 py-1 rounded bg-red-600 text-white" onClick={()=>removeEmp(u.email)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr><td className="py-2 px-2 text-gray-600" colSpan="3">No employees.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>

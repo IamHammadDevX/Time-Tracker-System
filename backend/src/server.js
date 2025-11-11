@@ -10,7 +10,7 @@ import jwt from 'jsonwebtoken';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { connectMongo } from './db.js';
-import { db, getUserByEmail, createUser, verifyPassword, seedDefaultSuperAdmin, createOrganization, listManagers, getOrganizationByManagerId, upsertEmployeePassword } from './sqlite.js';
+import { db, getUserByEmail, createUser, verifyPassword, seedDefaultSuperAdmin, createOrganization, listManagers, getOrganizationByManagerId, upsertEmployeePassword, deleteUserById, deleteUserByEmail, deleteOrganizationByManagerId } from './sqlite.js';
 import bcrypt from 'bcryptjs';
 
 dotenv.config();
@@ -266,6 +266,35 @@ app.get('/api/admin/managers', requireRole(['super_admin']), (req, res) => {
   }
 });
 
+// ---- Super Admin: Delete a manager ----
+app.delete('/api/admin/managers/:id', requireRole(['super_admin']), (req, res) => {
+  try {
+    const { id } = req.params;
+    // Verify manager exists
+    let exists = null;
+    if (db) {
+      const stmt = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'");
+      exists = stmt.get(id);
+    } else {
+      try {
+        const arr = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), DATA_DIR, 'users.sqlite.json'), 'utf-8'));
+        exists = arr.find(u => String(u.id) === String(id) && u.role === 'manager');
+      } catch {}
+    }
+    if (!exists) return res.status(404).json({ error: 'Manager not found' });
+
+    // Delete orgs tied to this manager
+    try { deleteOrganizationByManagerId(id); } catch {}
+    // Delete manager login
+    const ok = deleteUserById(id);
+    if (!ok) return res.status(500).json({ error: 'Failed to delete manager' });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin:delete_manager] error:', e);
+    res.status(500).json({ error: 'Delete manager failed' });
+  }
+});
+
 // ---- Super Admin: Audit logs ----
 app.get('/api/admin/audit-logs', requireRole(['super_admin']), (req, res) => {
   try {
@@ -293,6 +322,36 @@ app.get('/api/employees', requireRole(['manager', 'super_admin']), (req, res) =>
     res.json({ users });
   } catch {
     res.json({ users: [] });
+  }
+});
+
+// ---- Admin/Manager: Delete an employee ----
+app.delete('/api/employees/:email', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    const { email } = req.params;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const allUsers = readUsers();
+    const employee = allUsers.find(u => u.role === 'employee' && String(u.email).toLowerCase() === String(email).toLowerCase());
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    // Managers may only remove their team
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      if (!teamEmails.includes(employee.email)) {
+        return res.status(403).json({ error: 'Not allowed' });
+      }
+    }
+    const remaining = allUsers.filter(u => String(u.email).toLowerCase() !== String(email).toLowerCase());
+    writeUsers(remaining);
+    try { deleteUserByEmail(email); } catch {}
+    // Terminate any ongoing live streams for this employee
+    try {
+      liveStreamOn.set(email, false);
+      io.to(viewersRoom(email)).emit('live_view:terminate', { by: email, reason: 'deleted' });
+    } catch {}
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[employees:delete] error:', e);
+    res.status(500).json({ error: 'Delete employee failed' });
   }
 });
 
@@ -424,6 +483,11 @@ app.post('/api/work/stop', requireRole(['employee']), (req, res) => {
     active.endedAt = new Date().toISOString();
     active.isActive = false;
     writeSessions(sessions);
+    // Terminate any ongoing live streams for this employee
+    try {
+      liveStreamOn.set(employeeId, false);
+      io.to(viewersRoom(employeeId)).emit('live_view:terminate', { by: employeeId, reason: 'work_stop' });
+    } catch {}
     res.json({ ok: true, session: active });
   } catch (e) {
     console.error('[work:stop] error:', e);
@@ -666,6 +730,8 @@ app.get('/api/activity/recent', requireRole(['manager', 'super_admin']), (req, r
 const userRoom = (userId) => `user:${userId}`;
 const viewersRoom = (employeeId) => `live:viewers:${employeeId}`;
 const onlineEmployees = new Set();
+// Track live streaming enablement per employee; frames are relayed only when true
+const liveStreamOn = new Map(); // employeeId -> boolean
 
 io.use((socket, next) => {
   try {
@@ -725,6 +791,7 @@ io.on('connection', (socket) => {
       if (!teamEmails.includes(employeeId)) return; // ignore if not in team
     }
     socket.join(viewersRoom(employeeId));
+    liveStreamOn.set(employeeId, true);
     io.to(userRoom(employeeId)).emit('live_view:initiate', { by: userId });
     appendAudit('live_view_start', { actorId: socket.data.userId || userId, employeeId });
   });
@@ -737,18 +804,23 @@ io.on('connection', (socket) => {
       if (!teamEmails.includes(employeeId)) return; // ignore if not in team
     }
     socket.leave(viewersRoom(employeeId));
-    io.to(userRoom(employeeId)).emit('live_view:terminate', { by: userId });
+    liveStreamOn.set(employeeId, false);
+    io.to(userRoom(employeeId)).emit('live_view:terminate', { by: userId, reason: 'manager_stop' });
+    io.to(viewersRoom(employeeId)).emit('live_view:terminate', { by: userId, reason: 'manager_stop' });
   });
 
   // Employee can notify termination (e.g., tracking stopped)
   socket.on('live_view:terminate', ({ employeeId }) => {
     if (role !== 'employee') return;
-    io.to(viewersRoom(employeeId)).emit('live_view:terminate', { by: userId });
+    liveStreamOn.set(employeeId, false);
+    io.to(viewersRoom(employeeId)).emit('live_view:terminate', { by: userId, reason: 'employee_terminate' });
   });
 
   // Employee streams frames; server relays only to viewers of that employee
   socket.on('live_view:frame', ({ employeeId, frameBase64, ts }) => {
-    io.to(viewersRoom(employeeId)).emit('live_view:frame', { employeeId, frameBase64, ts });
+    if (liveStreamOn.get(employeeId)) {
+      io.to(viewersRoom(employeeId)).emit('live_view:frame', { employeeId, frameBase64, ts });
+    }
   });
 
   socket.on('disconnect', () => {
@@ -756,6 +828,7 @@ io.on('connection', (socket) => {
     if (role === 'employee' && userId) {
       onlineEmployees.delete(userId);
       io.emit('presence:offline', { userId });
+      liveStreamOn.set(userId, false);
       io.to(viewersRoom(userId)).emit('live_view:terminate', { by: userId, reason: 'offline' });
     }
   });

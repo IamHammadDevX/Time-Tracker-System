@@ -164,3 +164,43 @@ export function upsertEmployeePassword(email, password) {
   fs.writeFileSync(fallbacks.users, JSON.stringify(arr, null, 2))
   return { id, email }
 }
+
+// Delete helpers
+export function deleteUserById(id) {
+  if (db) {
+    const del = db.prepare("DELETE FROM users WHERE id = ?")
+    const info = del.run(id)
+    return info.changes > 0
+  }
+  const arr = JSON.parse(fs.readFileSync(fallbacks.users, 'utf-8'))
+  const next = arr.filter(u => String(u.id) !== String(id))
+  const changed = next.length !== arr.length
+  if (changed) fs.writeFileSync(fallbacks.users, JSON.stringify(next, null, 2))
+  return changed
+}
+
+export function deleteUserByEmail(email) {
+  if (db) {
+    const del = db.prepare("DELETE FROM users WHERE email = ?")
+    const info = del.run(email)
+    return info.changes > 0
+  }
+  const arr = JSON.parse(fs.readFileSync(fallbacks.users, 'utf-8'))
+  const next = arr.filter(u => String(u.email).toLowerCase() !== String(email).toLowerCase())
+  const changed = next.length !== arr.length
+  if (changed) fs.writeFileSync(fallbacks.users, JSON.stringify(next, null, 2))
+  return changed
+}
+
+export function deleteOrganizationByManagerId(managerId) {
+  if (db) {
+    const del = db.prepare('DELETE FROM organizations WHERE manager_id = ?')
+    const info = del.run(managerId)
+    return info.changes > 0
+  }
+  const arr = JSON.parse(fs.readFileSync(fallbacks.orgs, 'utf-8'))
+  const next = arr.filter(o => String(o.manager_id) !== String(managerId))
+  const changed = next.length !== arr.length
+  if (changed) fs.writeFileSync(fallbacks.orgs, JSON.stringify(next, null, 2))
+  return changed
+}

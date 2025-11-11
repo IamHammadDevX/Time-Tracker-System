@@ -2,7 +2,7 @@ import React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import Nav from '../components/Nav.jsx'
-import { io } from 'socket.io-client'
+import { getSocket } from '../socket.js'
 // presence is driven via Socket.IO events from backend
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -22,17 +22,15 @@ export default function LiveView() {
   const [assignErr, setAssignErr] = useState('')
   const socketRef = useRef(null)
 
+  // Rehydrate previously selected employee so streaming persists across tabs
   useEffect(() => {
-    const token = localStorage.getItem('token') || ''
-    let userId = ''
-    let uid = ''
-    try {
-      const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
-      userId = payload?.email || payload?.userId || ''
-      uid = payload?.uid || ''
-    } catch {}
-    // Send JWT via Socket.IO auth for production; include uid/userId for audit context
-    const s = io(API, { auth: { token }, query: { userId, uid } })
+    const saved = localStorage.getItem('liveview_employee')
+    if (saved) setEmployeeId(saved)
+  }, [])
+
+  useEffect(() => {
+    // Use shared socket instance so connection persists across route changes
+    const s = getSocket()
     socketRef.current = s
     s.on('live_view:frame', (payload) => {
       if (payload?.employeeId === employeeId) {
@@ -59,7 +57,14 @@ export default function LiveView() {
       setOnlineEmployees(prev => prev.filter(u => u !== userId))
       if (employeeId === userId) setStatus('idle')
     })
-    return () => { s.disconnect() }
+    // Do NOT disconnect on unmount; only remove listeners
+    return () => {
+      s.off('live_view:frame')
+      s.off('live_view:terminate')
+      s.off('presence:list')
+      s.off('presence:online')
+      s.off('presence:offline')
+    }
   }, [employeeId])
 
   // Load employees and managers for super admin team switcher
@@ -87,8 +92,11 @@ export default function LiveView() {
   // Auto-start live view when selecting an employee
   useEffect(() => {
     if (employeeId) {
+      // persist selection across navigation
+      localStorage.setItem('liveview_employee', employeeId)
       setFrames([])
       setStatus('idle')
+      // Keep viewer room joined even if route changes; emit start idempotently
       socketRef.current?.emit('live_view:start', { employeeId })
       // Fetch current assigned interval for selected employee
       const token = localStorage.getItem('token')
