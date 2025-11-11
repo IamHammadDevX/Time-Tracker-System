@@ -573,7 +573,7 @@ app.get('/api/work/sessions/today', requireRole(['manager', 'super_admin']), (re
 });
 
 // Screenshot upload
-app.post('/api/uploads/screenshot', upload.single('screenshot'), async (req, res) => {
+app.post('/api/uploads/screenshot', requireRole(['employee']), upload.single('screenshot'), async (req, res) => {
   try {
     const fileRelPath = path.relative(process.cwd(), req.file.path);
     const employeeId = (req.body && (req.body.employeeId || req.body.email)) || 'unknown';
@@ -586,6 +586,24 @@ app.post('/api/uploads/screenshot', upload.single('screenshot'), async (req, res
     } catch (e) {
       console.error('[meta] write failed:', e);
     }
+
+    // Mark employee as online upon receiving a screenshot (helps Live View selection)
+    if (employeeId && employeeId !== 'unknown') {
+      onlineEmployees.add(employeeId);
+      io.emit('presence:online', { userId: employeeId });
+    }
+
+    // If a manager has started live view for this employee, relay the frame to viewers
+    try {
+      const absFile = path.resolve(req.file.path);
+      const frameBase64 = fs.readFileSync(absFile, { encoding: 'base64' });
+      if (liveStreamOn.get(employeeId)) {
+        io.to(viewersRoom(employeeId)).emit('live_view:frame', { employeeId, frameBase64, ts: record.ts });
+      }
+    } catch (e) {
+      console.warn('[live_view] relay failed:', e?.message || e);
+    }
+
     res.status(201).json({ file: record.file });
   } catch (err) {
     console.error('[upload] error:', err);
@@ -816,12 +834,10 @@ io.on('connection', (socket) => {
     io.to(viewersRoom(employeeId)).emit('live_view:terminate', { by: userId, reason: 'employee_terminate' });
   });
 
-  // Employee streams frames; server relays only to viewers of that employee
-  socket.on('live_view:frame', ({ employeeId, frameBase64, ts }) => {
-    if (liveStreamOn.get(employeeId)) {
-      io.to(viewersRoom(employeeId)).emit('live_view:frame', { employeeId, frameBase64, ts });
-    }
-  });
+// Employee streams frames; server always relays to viewers of that employee
+socket.on('live_view:frame', ({ employeeId, frameBase64, ts }) => {
+  io.to(viewersRoom(employeeId)).emit('live_view:frame', { employeeId, frameBase64, ts });
+});
 
   socket.on('disconnect', () => {
     // If an employee disconnects, proactively terminate any viewer sessions

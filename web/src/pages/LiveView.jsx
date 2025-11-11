@@ -163,20 +163,24 @@ export default function LiveView() {
               </div>
             )}
             <div>
-              <label className="block text-sm">Online Employees</label>
+              <label className="block text-sm">Employees</label>
               <select className="border rounded px-3 py-2 min-w-64"
                 value={employeeId}
                 onChange={e=>setEmployeeId(e.target.value)}>
                 <option value="">Select employee…</option>
-                {(filteredOnline.length ? filteredOnline : onlineEmployees).map(email => (
-                  <option key={email} value={email}>{email}</option>
-                ))}
+                {(() => {
+                  const online = filteredOnline.length ? filteredOnline : onlineEmployees;
+                  const options = online.length ? online : allEmployees.map(e => e.email);
+                  return options.map(email => (
+                    <option key={email} value={email}>{email}</option>
+                  ))
+                })()}
               </select>
-              {selectedManager && filteredOnline.length === 0 && (
+              {selectedManager && filteredOnline.length === 0 && onlineEmployees.length > 0 && (
                 <div className="text-xs text-gray-600 mt-1">No online employees for this manager yet.</div>
               )}
               {!selectedManager && onlineEmployees.length === 0 && (
-                <div className="text-xs text-gray-600 mt-1">No online employees. Ensure desktop client is logged in and interval is assigned.</div>
+                <div className="text-xs text-gray-600 mt-1">No one is online. You can still select an employee; frames will appear as screenshots arrive.</div>
               )}
             </div>
             <button className="px-4 py-2.5 rounded bg-green-600 text-white hover:bg-green-700" onClick={start}>Start</button>
@@ -187,6 +191,7 @@ export default function LiveView() {
                 <select className="border rounded px-3 py-2"
                   value={assignMinutes}
                   onChange={e=>setAssignMinutes(e.target.value)}>
+                  <option value="1">1 minutes</option>
                   <option value="2">2 minutes</option>
                   <option value="3">3 minutes</option>
                   <option value="4">4 minutes</option>

@@ -3,7 +3,7 @@ import axios from 'axios'
 import Nav from '../components/Nav.jsx'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-const allowedMinutes = [2, 3, 4, 5, 6, 8, 10, 12, 15, 20]
+const allowedMinutes = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20]
 
 export default function WorkHours() {
   const [loading, setLoading] = useState(true)

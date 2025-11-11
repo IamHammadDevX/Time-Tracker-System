@@ -167,6 +167,13 @@ class TimeTrackerApp:
                 self.start_tracking()
         except Exception:
             pass
+        # Immediately start live view streaming on successful login
+        try:
+            self.live_view_active = True
+            self._set_live_indicator(True)
+            self._start_live_loop()
+        except Exception as e:
+            print('[live] auto-start error:', e)
 
     def _connect_socket(self, email):
         try:
@@ -458,12 +465,15 @@ class TimeTrackerApp:
         tick(seconds)
 
     def _resolve_backend_url(self) -> str:
-        # Try env-provided URL, then 127.0.0.1, then localhost
+        # Try env-provided URL, then common local ports (4000, 4011)
         candidates = []
         env_url = BACKEND_URL
         if env_url:
             candidates.append(env_url)
-        candidates.extend(['http://127.0.0.1:4000', 'http://localhost:4000'])
+        candidates.extend([
+            'http://127.0.0.1:4000', 'http://localhost:4000',
+            'http://127.0.0.1:4011', 'http://localhost:4011',
+        ])
         for url in candidates:
             try:
                 r = requests.get(f'{url}/health', timeout=2)
@@ -487,7 +497,7 @@ class TimeTrackerApp:
             return bool(r.ok)
         except Exception:
             # Retry on alternate local URLs
-            for url in ['http://127.0.0.1:4000', 'http://localhost:4000']:
+            for url in ['http://127.0.0.1:4000', 'http://localhost:4000', 'http://127.0.0.1:4011', 'http://localhost:4011']:
                 try:
                     r = requests.get(f'{url}/health', timeout=3)
                     if r.ok:
