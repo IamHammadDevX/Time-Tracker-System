@@ -128,9 +128,7 @@ class TimeTrackerApp:
         header_controls = tk.Frame(header, bg=self.color_bg)
         header_controls.pack(side=tk.RIGHT, padx=8, pady=8)
         self.start_btn = ttk.Button(header_controls, text='Start', style='Success.TButton', state=tk.DISABLED, command=self.start_tracking)
-        self.start_btn.pack(side=tk.LEFT)
         self.stop_btn = ttk.Button(header_controls, text='Stop', style='Danger.TButton', state=tk.DISABLED, command=self.stop_tracking)
-        self.stop_btn.pack(side=tk.LEFT, padx=6)
 
     def login(self):
         email = self.email.get().strip()
