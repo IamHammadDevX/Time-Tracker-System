@@ -2,8 +2,9 @@ import React from 'react'
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Nav from '../components/Nav.jsx'
+import { resolveApiBase } from '../api.js'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Activity() {
   const [items, setItems] = useState([])
@@ -14,13 +15,16 @@ export default function Activity() {
   useEffect(() => {
     const token = localStorage.getItem('token')
     const headers = { Authorization: `Bearer ${token}` }
-    const getShots = axios.get(`${API}/api/activity/recent`, { headers })
-      .then(r => setItems(r.data.employees || []))
-    const getHours = axios.get(`${API}/api/work/summary/today`, { headers })
-      .then(r => setHours(r.data.employees || []))
-    Promise.allSettled([getShots, getHours])
-      .catch(e => setError(e?.response?.data?.error || e.message))
-      .finally(() => setLoading(false))
+    resolveApiBase().then((BASE)=>{
+      API = BASE
+      const getShots = axios.get(`${BASE}/api/activity/recent`, { headers })
+        .then(r => setItems(r.data.employees || []))
+      const getHours = axios.get(`${BASE}/api/work/summary/today`, { headers })
+        .then(r => setHours(r.data.employees || []))
+      Promise.allSettled([getShots, getHours])
+        .catch(e => setError(e?.response?.data?.error || e.message))
+        .finally(() => setLoading(false))
+    })
   }, [])
 
   return (

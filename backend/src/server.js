@@ -885,6 +885,22 @@ process.on('unhandledRejection', (err) => {
   console.error('[server] Unhandled rejection:', err);
 });
 
+// Serve built frontend (SPA) in production if available
+try {
+  const webDistPath = path.join(projectRoot, 'web', 'dist');
+  if (fs.existsSync(webDistPath)) {
+    app.use(express.static(webDistPath));
+    // SPA fallback: send index.html for non-API routes
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/downloads')) return next();
+      res.sendFile(path.join(webDistPath, 'index.html'));
+    });
+    console.log('[server] Serving static frontend from', webDistPath);
+  }
+} catch (e) {
+  console.warn('[server] Unable to configure static frontend serving:', e?.message || e);
+}
+
 
 // ---------- BEGIN: compatibility proxy to support hardcoded :4000 frontend ----------
 // If the backend starts on a different port than 4000, create a tiny proxy

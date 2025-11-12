@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 import Nav from '../components/Nav.jsx'
+import { resolveApiBase } from '../api.js'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Dashboard() {
   const [org, setOrg] = useState(null)
@@ -17,10 +18,13 @@ export default function Dashboard() {
   useEffect(() => {
     const token = localStorage.getItem('token')
     const headers = { Authorization: `Bearer ${token}` }
-    const getOrg = axios.get(`${API}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
-    const getUsers = axios.get(`${API}/api/employees`, { headers }).then(r => { const list = r.data.users || []; setEmployees(list); setEmployeesCount(list.length) }).catch(()=> { setEmployees([]); setEmployeesCount(0) })
-    const getFiles = axios.get(`${API}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
-    Promise.allSettled([getOrg, getUsers, getFiles]).finally(() => setLoading(false))
+    resolveApiBase().then((BASE)=>{
+      API = BASE
+      const getOrg = axios.get(`${BASE}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
+      const getUsers = axios.get(`${BASE}/api/employees`, { headers }).then(r => { const list = r.data.users || []; setEmployees(list); setEmployeesCount(list.length) }).catch(()=> { setEmployees([]); setEmployeesCount(0) })
+      const getFiles = axios.get(`${BASE}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
+      Promise.allSettled([getOrg, getUsers, getFiles]).finally(() => setLoading(false))
+    })
   }, [])
 
   // Load managers for super admin team switcher
@@ -30,7 +34,9 @@ export default function Dashboard() {
       const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))
       if (payload?.role === 'super_admin') {
         const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        axios.get(`${API}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || []))
+        resolveApiBase().then((BASE)=>{
+          axios.get(`${BASE}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || []))
+        })
       }
     } catch {}
   }, [])

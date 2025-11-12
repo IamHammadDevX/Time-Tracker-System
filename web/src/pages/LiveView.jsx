@@ -1,11 +1,12 @@
 import React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
+import { resolveApiBase } from '../api.js'
 import Nav from '../components/Nav.jsx'
 import { getSocket } from '../socket.js'
 // presence is driven via Socket.IO events from backend
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function LiveView() {
   const [employeeId, setEmployeeId] = useState('')
@@ -29,6 +30,7 @@ export default function LiveView() {
   }, [])
 
   useEffect(() => {
+    resolveApiBase().then(base => { API = base })
     // Use shared socket instance so connection persists across route changes
     const s = getSocket()
     socketRef.current = s
@@ -71,11 +73,15 @@ export default function LiveView() {
   useEffect(() => {
     const token = localStorage.getItem('token')
     const headers = { Authorization: `Bearer ${token}` }
-    const loadEmployees = axios.get(`${API}/api/employees`, { headers }).then(r => setAllEmployees(r.data?.users || [])).catch(()=>{})
+    resolveApiBase().then((BASE)=>{
+      axios.get(`${BASE}/api/employees`, { headers }).then(r => setAllEmployees(r.data?.users || [])).catch(()=>{})
+    })
     let role = ''
     try { const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); role = payload?.role } catch {}
     if (role === 'super_admin') {
-      axios.get(`${API}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || [])).catch(()=>{})
+      resolveApiBase().then((BASE)=>{
+        axios.get(`${BASE}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || [])).catch(()=>{})
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -101,7 +107,7 @@ export default function LiveView() {
       // Fetch current assigned interval for selected employee
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
-      axios.get(`${API}/api/capture-interval`, { headers, params: { employeeId } })
+      resolveApiBase().then((BASE)=>axios.get(`${BASE}/api/capture-interval`, { headers, params: { employeeId } }))
         .then(r => {
           if (r.data?.assigned) {
             setAssignedIntervalSec(r.data.intervalSeconds || null)
@@ -130,7 +136,8 @@ export default function LiveView() {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
       const mins = Number(assignMinutes)
-      const r = await axios.post(`${API}/api/capture-interval`, { employeeId, intervalMinutes: mins }, { headers })
+      const BASE = await resolveApiBase()
+      const r = await axios.post(`${BASE}/api/capture-interval`, { employeeId, intervalMinutes: mins }, { headers })
       const secs = r.data?.intervalSeconds
       setAssignedIntervalSec(secs || null)
       setAssignMsg(`Assigned ${mins} minute(s) to ${employeeId}`)

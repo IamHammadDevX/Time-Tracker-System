@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import Nav from '../components/Nav.jsx'
+import { resolveApiBase } from '../api.js'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const DEFAULT_API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Admin() {
   const [email, setEmail] = useState('manager@example.com')
@@ -22,7 +23,8 @@ export default function Admin() {
     try {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
-      const r = await axios.post(`${API}/api/admin/managers`, { email, password, orgName }, { headers })
+      const BASE = await resolveApiBase()
+      const r = await axios.post(`${BASE}/api/admin/managers`, { email, password, orgName }, { headers })
       setMsg(`Manager ${r.data?.manager?.email} created${r.data?.organization ? ' with org '+r.data.organization.name : ''}.`)
       setEmail(''); setPassword(''); setOrgName('')
       // refresh managers
@@ -36,7 +38,8 @@ export default function Admin() {
     try {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
-      const r = await axios.get(`${API}/api/admin/managers`, { headers })
+      const BASE = await resolveApiBase()
+      const r = await axios.get(`${BASE}/api/admin/managers`, { headers })
       setManagers(r.data?.managers || [])
     } catch {}
   }
@@ -45,7 +48,8 @@ export default function Admin() {
     try {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
-      const r = await axios.get(`${API}/api/employees`, { headers })
+      const BASE = await resolveApiBase()
+      const r = await axios.get(`${BASE}/api/employees`, { headers })
       setEmployees(r.data?.users || [])
     } catch {}
   }
@@ -57,7 +61,8 @@ export default function Admin() {
       const params = {}
       if (filterManagerId) params.managerId = filterManagerId
       if (filterEmployeeId) params.employeeId = filterEmployeeId
-      const r = await axios.get(`${API}/api/admin/audit-logs`, { headers, params })
+      const BASE = await resolveApiBase()
+      const r = await axios.get(`${BASE}/api/admin/audit-logs`, { headers, params })
       setLogs(r.data?.logs || [])
     } catch {}
   }
@@ -79,7 +84,8 @@ export default function Admin() {
     try {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
-      await axios.delete(`${API}/api/admin/managers/${id}`, { headers })
+      const BASE = await resolveApiBase()
+      await axios.delete(`${BASE}/api/admin/managers/${id}`, { headers })
       setMsg('Manager removed')
       loadManagers()
     } catch (e) {
@@ -92,7 +98,8 @@ export default function Admin() {
     try {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
-      await axios.delete(`${API}/api/employees/${encodeURIComponent(email)}`, { headers })
+      const BASE = await resolveApiBase()
+      await axios.delete(`${BASE}/api/employees/${encodeURIComponent(email)}`, { headers })
       setMsg('Employee removed')
       loadEmployees()
     } catch (e) {

@@ -2,8 +2,6 @@ import React from 'react'
 import { useState } from 'react'
 import axios from 'axios'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-
 export default function Login() {
   const [email, setEmail] = useState('admin@example.com')
   const [password, setPassword] = useState('admin123')
@@ -16,11 +14,12 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const resp = await axios.post(`${API}/api/auth/login`, { email, password, role })
+      const resp = await axios.post('/api/auth/login', { email, password, role })
       localStorage.setItem('token', resp.data.token)
       location.href = '/dashboard'
     } catch (err) {
-      setError(err?.response?.data?.error || err.message)
+      const msg = err?.response?.data?.error || err.message || 'Network error'
+      setError(`Login failed: ${msg}. Please verify the backend is reachable.`)
     } finally {
       setLoading(false)
     }

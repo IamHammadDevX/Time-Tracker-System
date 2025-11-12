@@ -1,6 +1,5 @@
 import { io } from 'socket.io-client'
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+import { resolveApiBase, getApiBaseSync } from './api.js'
 let socket = null
 
 function parseToken(token) {
@@ -20,11 +19,26 @@ export function getSocket() {
   const { userId, uid } = parseToken(token)
 
   if (!socket) {
-    socket = io(API, {
+    const initialBase = getApiBaseSync()
+    socket = io(initialBase, {
       auth: { token },
       query: { userId, uid },
       autoConnect: true,
       reconnection: true,
+    })
+    // Re-resolve base and reconnect if needed
+    resolveApiBase().then((base) => {
+      try {
+        if (base && socket?.io?.uri && socket.io.uri !== base) {
+          socket.disconnect()
+          socket = io(base, {
+            auth: { token },
+            query: { userId, uid },
+            autoConnect: true,
+            reconnection: true,
+          })
+        }
+      } catch {}
     })
   } else {
     // update auth on the existing socket in case token changed
