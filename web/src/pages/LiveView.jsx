@@ -17,10 +17,7 @@ export default function LiveView() {
   const [selectedManager, setSelectedManager] = useState('')
   const [status, setStatus] = useState('idle') // idle | active | offline
   const [frames, setFrames] = useState([]) // [{b64, ts}]
-  const [assignedIntervalSec, setAssignedIntervalSec] = useState(null)
-  const [assignMinutes, setAssignMinutes] = useState('3')
-  const [assignMsg, setAssignMsg] = useState('')
-  const [assignErr, setAssignErr] = useState('')
+  
   const socketRef = useRef(null)
 
   // Rehydrate previously selected employee so streaming persists across tabs
@@ -98,24 +95,15 @@ export default function LiveView() {
   // Auto-start live view when selecting an employee
   useEffect(() => {
     if (employeeId) {
-      // persist selection across navigation
       localStorage.setItem('liveview_employee', employeeId)
       setFrames([])
       setStatus('idle')
-      // Keep viewer room joined even if route changes; emit start idempotently
-      socketRef.current?.emit('live_view:start', { employeeId })
-      // Fetch current assigned interval for selected employee
-      const token = localStorage.getItem('token')
-      const headers = { Authorization: `Bearer ${token}` }
-      resolveApiBase().then((BASE)=>axios.get(`${BASE}/api/capture-interval`, { headers, params: { employeeId } }))
-        .then(r => {
-          if (r.data?.assigned) {
-            setAssignedIntervalSec(r.data.intervalSeconds || null)
-          } else {
-            setAssignedIntervalSec(null)
-          }
-        })
-        .catch(() => setAssignedIntervalSec(null))
+      const s = getSocket()
+      if (s && s.connected) {
+        s.emit('live_view:start', { employeeId })
+      } else {
+        s?.once('connect', () => s.emit('live_view:start', { employeeId }))
+      }
     }
   }, [employeeId])
 
@@ -129,22 +117,7 @@ export default function LiveView() {
     setStatus('idle')
   }
 
-  const assignInterval = async () => {
-    if (!employeeId) return
-    setAssignMsg(''); setAssignErr('')
-    try {
-      const token = localStorage.getItem('token')
-      const headers = { Authorization: `Bearer ${token}` }
-      const mins = Number(assignMinutes)
-      const BASE = await resolveApiBase()
-      const r = await axios.post(`${BASE}/api/capture-interval`, { employeeId, intervalMinutes: mins }, { headers })
-      const secs = r.data?.intervalSeconds
-      setAssignedIntervalSec(secs || null)
-      setAssignMsg(`Assigned ${mins} minute(s) to ${employeeId}`)
-    } catch (e) {
-      setAssignErr(e?.response?.data?.error || e.message)
-    }
-  }
+  
 
   const latest = frames[0]
 
@@ -192,34 +165,7 @@ export default function LiveView() {
             </div>
             <button className="px-4 py-2.5 rounded bg-green-600 text-white hover:bg-green-700" onClick={start}>Start</button>
             <button className="px-4 py-2.5 rounded bg-gray-700 text-white hover:bg-gray-800" onClick={stop}>Stop</button>
-            <div className="ml-4">
-              <label className="block text-sm">Assign Capture Interval</label>
-              <div className="flex items-center gap-2">
-                <select className="border rounded px-3 py-2"
-                  value={assignMinutes}
-                  onChange={e=>setAssignMinutes(e.target.value)}>
-                  <option value="1">1 minutes</option>
-                  <option value="2">2 minutes</option>
-                  <option value="3">3 minutes</option>
-                  <option value="4">4 minutes</option>
-                  <option value="5">5 minutes</option>
-                  <option value="8">8 minutes</option>
-                  <option value="10">10 minutes</option>
-                  <option value="15">15 minutes</option>
-                  <option value="20">20 minutes</option>
-                </select>
-                <button className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={assignInterval} disabled={!employeeId}>Assign</button>
-              </div>
-              <div className="text-xs mt-1 text-gray-600">
-                {assignedIntervalSec ? (
-                  <span>Current: {Math.round(assignedIntervalSec/60)} minute(s)</span>
-                ) : (
-                  <span>No interval assigned</span>
-                )}
-              </div>
-              {assignMsg && <div className="text-xs text-green-700 mt-1">{assignMsg}</div>}
-              {assignErr && <div className="text-xs text-red-600 mt-1">{assignErr}</div>}
-            </div>
+            
           </div>
         </div>
 

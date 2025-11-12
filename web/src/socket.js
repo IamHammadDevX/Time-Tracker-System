@@ -25,6 +25,8 @@ export function getSocket() {
       query: { userId, uid },
       autoConnect: true,
       reconnection: true,
+      transports: ['websocket'],
+      path: '/socket.io',
     })
     // Re-resolve base and reconnect if needed
     resolveApiBase().then((base) => {
@@ -36,6 +38,8 @@ export function getSocket() {
             query: { userId, uid },
             autoConnect: true,
             reconnection: true,
+            transports: ['websocket'],
+            path: '/socket.io',
           })
         }
       } catch {}
