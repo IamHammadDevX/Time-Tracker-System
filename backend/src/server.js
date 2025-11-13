@@ -396,8 +396,8 @@ app.post('/api/admin/employees/password', requireRole(['manager', 'super_admin']
 });
 
 // Screen capture interval configuration
-// Align with web UI options
-const allowedMinutes = [2, 3, 4, 5, 6, 8, 10, 12, 15, 20];
+// Align with web UI options (include 1 minute)
+const allowedMinutes = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20];
 app.get('/api/capture-interval', requireRole(['employee', 'manager', 'super_admin']), (req, res) => {
   try {
     const intervals = JSON.parse(fs.readFileSync(intervalsFile, 'utf-8'));
