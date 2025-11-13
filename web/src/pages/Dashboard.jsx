@@ -21,12 +21,14 @@ export default function Dashboard() {
     const headers = { Authorization: `Bearer ${token}` }
     resolveApiBase().then((BASE)=>{
       API = BASE
-      let role = ''
-      try { const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); role = payload?.role } catch {}
-      setRole(role || '')
-      const getTeamReq = role === 'manager'
-        ? axios.get(`${BASE}/api/team`, { headers }).then(r => setTeam(r.data?.team || null)).catch(()=>{})
-        : axios.get(`${BASE}/api/org`, { headers }).then(r => setTeam(r.data?.organization || null)).catch(()=>{})
+      try { const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); setRole(payload?.role || '') } catch {}
+      const getTeamReq = axios.get(`${BASE}/api/team`, { headers })
+        .then(r => {
+          const t = r.data?.team || null
+          if (t) setTeam(t)
+          else return axios.get(`${BASE}/api/org`, { headers }).then(rr => setTeam(rr.data?.organization || null)).catch(()=>{})
+        })
+        .catch(() => axios.get(`${BASE}/api/org`, { headers }).then(rr => setTeam(rr.data?.organization || null)).catch(()=>{}))
       const getUsers = axios.get(`${BASE}/api/employees`, { headers }).then(r => { const list = r.data.users || []; setEmployees(list); setEmployeesCount(list.length) }).catch(()=> { setEmployees([]); setEmployeesCount(0) })
       const getFiles = axios.get(`${BASE}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
       Promise.allSettled([getTeamReq, getUsers, getFiles]).finally(() => setLoading(false))
