@@ -3,6 +3,7 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import Nav from '../components/Nav.jsx'
 import { resolveApiBase } from '../api.js'
+import { getSocket } from '../socket.js'
 
 let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -33,6 +34,21 @@ export default function Dashboard() {
       const getFiles = axios.get(`${BASE}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
       Promise.allSettled([getTeamReq, getUsers, getFiles]).finally(() => setLoading(false))
     })
+  }, [])
+
+  useEffect(() => {
+    const s = getSocket()
+    const token = localStorage.getItem('token')
+    const headers = { Authorization: `Bearer ${token}` }
+    const refreshShots = () => {
+      resolveApiBase().then((BASE)=>{
+        axios.get(`${BASE}/api/uploads/list`, { headers })
+          .then(r => setRecentFiles((r.data.files || []).slice(-6).reverse()))
+          .catch(()=>{})
+      })
+    }
+    s.on('uploads:cleanup_done', refreshShots)
+    return () => { s.off('uploads:cleanup_done', refreshShots) }
   }, [])
 
   // Load managers for super admin team switcher

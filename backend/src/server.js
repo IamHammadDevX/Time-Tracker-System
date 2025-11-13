@@ -630,6 +630,55 @@ app.post('/api/uploads/screenshot', requireRole(['employee']), upload.single('sc
   }
 });
 
+app.post('/api/uploads/cleanup', requireRole(['super_admin']), (req, res) => {
+  try {
+    const { from, to } = req.body || {};
+    const toStartISO = (ds) => {
+      if (!ds) return null;
+      const base = new Date(ds);
+      const d = new Date(`${base.toISOString().slice(0,10)}T00:00:00`);
+      return d.toISOString();
+    };
+    const toEndISO = (ds) => {
+      if (!ds) return null;
+      const base = new Date(ds);
+      const d = new Date(`${base.toISOString().slice(0,10)}T00:00:00`);
+      return new Date(d.getTime() + 24*60*60*1000 - 1).toISOString();
+    };
+    const fromIso = from ? toStartISO(from) : null;
+    const toIso = to ? toEndISO(to) : null;
+    const fromMs = fromIso ? new Date(fromIso).getTime() : null;
+    const toMs = toIso ? new Date(toIso).getTime() : null;
+    let meta = [];
+    try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch {}
+    const inRange = (ts) => {
+      const t = new Date(ts).getTime();
+      if (fromMs && t < fromMs) return false;
+      if (toMs && t > toMs) return false;
+      return true;
+    };
+    const targets = meta.filter(m => m.ts && inRange(m.ts));
+    let removed = 0;
+    let bytesFreed = 0;
+    for (const m of targets) {
+      try {
+        const fname = path.basename(String(m.file || ''));
+        const abs = path.join(uploadPath, fname);
+        try { bytesFreed += fs.statSync(abs).size; } catch {}
+        if (fs.existsSync(abs)) fs.unlinkSync(abs);
+        removed += 1;
+      } catch {}
+    }
+    const keep = meta.filter(m => !(m.ts && inRange(m.ts)));
+    try { fs.writeFileSync(metaFile, JSON.stringify(keep, null, 2)); } catch {}
+    try { io.emit('uploads:cleanup_done', { removed, bytesFreed, from: fromIso, to: toIso }); } catch {}
+    res.json({ ok: true, removed, bytesFreed });
+  } catch (err) {
+    console.error('[uploads:cleanup] error:', err);
+    res.status(500).json({ error: 'Cleanup failed' });
+  }
+});
+
 // List uploaded screenshots (development helper)
 app.get('/api/uploads/list', requireRole(['manager', 'super_admin']), async (req, res) => {
   try {

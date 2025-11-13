@@ -16,6 +16,10 @@ export default function Admin() {
   const [filterManagerId, setFilterManagerId] = useState('')
   const [filterEmployeeId, setFilterEmployeeId] = useState('')
   const [employees, setEmployees] = useState([])
+  const [cleanupFrom, setCleanupFrom] = useState('')
+  const [cleanupTo, setCleanupTo] = useState('')
+  const [cleanupMsg, setCleanupMsg] = useState('')
+  const [cleanupErr, setCleanupErr] = useState('')
 
   const submit = async (e) => {
     e.preventDefault()
@@ -32,6 +36,35 @@ export default function Admin() {
       loadManagers()
     } catch (e) {
       setError(e?.response?.data?.error || e.message)
+    }
+  }
+
+  const cleanupScreenshots = async () => {
+    setCleanupMsg(''); setCleanupErr('')
+    try {
+      const token = localStorage.getItem('token')
+      const headers = { Authorization: `Bearer ${token}` }
+      const toStartISO = (ds) => {
+        if (!ds) return null
+        const base = new Date(`${ds}T00:00:00`)
+        return new Date(base).toISOString()
+      }
+      const toEndISO = (ds) => {
+        if (!ds) return null
+        const base = new Date(`${ds}T00:00:00`)
+        const end = new Date(base.getTime() + 24*60*60*1000 - 1)
+        return end.toISOString()
+      }
+      const body = { from: cleanupFrom ? toStartISO(cleanupFrom) : null, to: cleanupTo ? toEndISO(cleanupTo) : null }
+      const BASE = await resolveApiBase()
+      const r = await axios.post(`${BASE}/api/uploads/cleanup`, body, { headers })
+      const removed = r.data?.removed || 0
+      const bytes = r.data?.bytesFreed || 0
+      setCleanupMsg(`Deleted ${removed} file(s), freed ${(bytes/1024/1024).toFixed(2)} MB`)
+      setTimeout(() => setCleanupMsg(''), 5000)
+    } catch (e) {
+      setCleanupErr(e?.response?.data?.error || e.message)
+      setTimeout(() => setCleanupErr(''), 5000)
     }
   }
 
@@ -116,6 +149,24 @@ export default function Admin() {
         <p className="text-sm text-gray-700">Create manager accounts and assign teams.</p>
         {error && <div className="text-red-600 text-sm">{error}</div>}
         {msg && <div className="text-blue-700 text-sm">{msg}</div>}
+
+        <section className="bg-white border rounded p-4">
+          <div className="font-semibold mb-2">Storage Cleanup</div>
+          <div className="text-sm text-gray-700 mb-2">Delete screenshots between dates. User records and sessions are not affected.</div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs text-gray-600">From</label>
+              <input type="date" className="border rounded px-3 py-2" value={cleanupFrom} onChange={e=>setCleanupFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600">To</label>
+              <input type="date" className="border rounded px-3 py-2" value={cleanupTo} onChange={e=>setCleanupTo(e.target.value)} />
+            </div>
+            <button className="px-3 py-2 rounded bg-red-600 text-white" onClick={cleanupScreenshots}>Delete Screenshots</button>
+          </div>
+          {cleanupErr && <div className="text-red-600 text-sm mt-2">{cleanupErr}</div>}
+          {cleanupMsg && <div className="text-green-700 text-sm mt-2">{cleanupMsg}</div>}
+        </section>
 
         <section className="bg-white border rounded p-4">
           <div className="font-semibold mb-2">Create Manager</div>

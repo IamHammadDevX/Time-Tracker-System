@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Nav from '../components/Nav.jsx'
 import { resolveApiBase } from '../api.js'
+import { getSocket } from '../socket.js'
 
 let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -25,6 +26,19 @@ export default function Activity() {
         .catch(e => setError(e?.response?.data?.error || e.message))
         .finally(() => setLoading(false))
     })
+  }, [])
+
+  useEffect(() => {
+    const s = getSocket()
+    const token = localStorage.getItem('token')
+    const headers = { Authorization: `Bearer ${token}` }
+    const refresh = () => {
+      resolveApiBase().then((BASE)=>{
+        axios.get(`${BASE}/api/activity/recent`, { headers }).then(r => setItems(r.data.employees || [])).catch(()=>{})
+      })
+    }
+    s.on('uploads:cleanup_done', refresh)
+    return () => { s.off('uploads:cleanup_done', refresh) }
   }, [])
 
   return (
