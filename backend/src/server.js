@@ -189,6 +189,27 @@ app.get('/api/org', requireRole(['manager', 'super_admin']), (req, res) => {
   }
 });
 
+// Team info for the authenticated manager (maps to organization by manager)
+app.get('/api/team', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    if (req.user?.role === 'manager') {
+      const mgrId = req.user?.uid;
+      const mgrEmail = req.user?.sub;
+      let org = null;
+      try { org = getOrganizationByManagerId(mgrId); } catch {}
+      if (!org) {
+        try { org = getOrganizationByManagerId(mgrEmail); } catch {}
+      }
+      if (org) return res.json({ team: { id: org.id, name: org.name } });
+      return res.json({ team: null });
+    }
+    // super_admin has no single team context
+    return res.json({ team: null });
+  } catch {
+    return res.json({ team: null });
+  }
+});
+
 // Employees
 app.post('/api/employees', requireRole(['manager', 'super_admin']), (req, res) => {
   const { email, name, managerId: bodyManagerId, password } = req.body || {};
@@ -235,13 +256,11 @@ app.post('/api/admin/managers', requireRole(['super_admin']), (req, res) => {
   try {
     const { email, password, orgName } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    if (!orgName || !String(orgName).trim()) return res.status(400).json({ error: 'Team name is required' });
     const existing = getUserByEmail(email);
     if (existing) return res.status(409).json({ error: 'User already exists' });
     const manager = createUser({ email, password, role: 'manager' });
-    let org = null;
-    if (orgName && orgName.trim()) {
-      org = createOrganization({ name: orgName.trim(), managerId: manager.id });
-    }
+    const org = createOrganization({ name: orgName.trim(), managerId: manager.id });
     res.status(201).json({ ok: true, manager: { id: manager.id, email: manager.email, role: manager.role }, organization: org });
   } catch (e) {
     console.error('[admin:create_manager] error:', e);

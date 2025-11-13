@@ -85,6 +85,10 @@ class TimeTrackerApp:
         self.backend_url = self._resolve_backend_url()
 
         self._build_ui()
+        try:
+            self.root.protocol('WM_DELETE_WINDOW', self._on_close)
+        except Exception:
+            pass
 
     def _build_ui(self):
         # Header bar
@@ -141,7 +145,7 @@ class TimeTrackerApp:
             messagebox.showerror('Login failed', f'Server not reachable at {self.backend_url}. Ensure backend is running on port 4000.')
             return
         try:
-            resp = requests.post(f'{self.backend_url}/api/auth/login', json={'email': email, 'password': password, 'role': 'employee'}, timeout=10)
+            resp = requests.post(f'{self.backend_url}/api/auth/login', json={'email': email, 'password': password}, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             self.token = data.get('token')
@@ -156,6 +160,22 @@ class TimeTrackerApp:
 
         self.status_var.set(f'Logged in as {email}')
         self.header_status.configure(text=f'Logged in as {email}')
+        # Determine role; desktop tracking is only for employees
+        role = 'employee'
+        try:
+            payload = self._parse_jwt(self.token)
+            role = payload.get('role') or 'employee'
+        except Exception:
+            role = 'employee'
+        if role != 'employee':
+            try:
+                self.start_btn.configure(state=tk.DISABLED)
+                self.stop_btn.configure(state=tk.DISABLED)
+            except Exception:
+                pass
+            messagebox.showinfo('Login', f'Logged in as {role}. Desktop tracking is only available for employees.')
+            return
+
         # Connect Socket.IO for live view signaling (UI hidden for employees)
         self._connect_socket(email)
         # Fetch capture interval and auto-start tracking
@@ -309,6 +329,35 @@ class TimeTrackerApp:
         except Exception as e:
             print('[work] stop error:', e)
 
+    def _on_close(self):
+        try:
+            if self.tracking:
+                try:
+                    self.stop_tracking()
+                except Exception:
+                    pass
+            else:
+                try:
+                    if self.token:
+                        headers = { 'Authorization': f'Bearer {self.token}' }
+                        requests.post(f'{self.backend_url}/api/work/stop', headers=headers, timeout=10)
+                except Exception:
+                    pass
+            try:
+                self.disable_live_view()
+            except Exception:
+                pass
+            try:
+                if self.sio:
+                    self.sio.disconnect()
+            except Exception:
+                pass
+        finally:
+            try:
+                self.root.destroy()
+            except Exception:
+                os._exit(0)
+
     def _capture_screenshot(self):
         with mss.mss() as sct:
             monitor = sct.monitors[1]
@@ -417,19 +466,39 @@ class TimeTrackerApp:
         except Exception:
             return 0
 
+    def _parse_jwt(self, token: str) -> dict:
+        try:
+            parts = (token or '').split('.')
+            if len(parts) < 2:
+                return {}
+            import json, base64
+            b64 = parts[1].replace('-', '+').replace('_', '/')
+            # Add padding if necessary
+            pad = '=' * (-len(b64) % 4)
+            decoded = base64.b64decode(b64 + pad)
+            return json.loads(decoded.decode('utf-8'))
+        except Exception:
+            return {}
+
     def _heartbeat_loop(self):
-        # Periodically send idle delta seconds to backend while tracking
-        prev_idle = self._get_idle_seconds()
+        # Periodically send idle delta/duration to backend while tracking
+        prev_idle_duration = 0
         while not self._stop_event.is_set():
             time.sleep(HEARTBEAT_INTERVAL_SECONDS)
             if self._stop_event.is_set():
                 break
             try:
-                current_idle = self._get_idle_seconds()
-                delta = max(0, current_idle - prev_idle)
-                prev_idle = current_idle
+                since_last_input = self._get_idle_seconds()
+                current_idle_duration = max(0, since_last_input - 180)
+                delta = 0
+                if current_idle_duration > 0:
+                    delta = max(0, current_idle_duration - prev_idle_duration)
+                else:
+                    prev_idle_duration = 0
+                prev_idle_duration = current_idle_duration
                 headers = { 'Authorization': f'Bearer {self.token}' }
-                requests.post(f'{self.backend_url}/api/work/heartbeat', json={ 'idleDeltaSeconds': delta }, headers=headers, timeout=10)
+                payload = { 'idleDeltaSeconds': delta, 'idleDurationSeconds': current_idle_duration }
+                requests.post(f'{self.backend_url}/api/work/heartbeat', json=payload, headers=headers, timeout=10)
             except Exception as e:
                 print('[work] heartbeat error:', e)
 

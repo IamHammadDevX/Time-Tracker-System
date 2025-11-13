@@ -65,6 +65,28 @@ export default function WorkHours() {
       .finally(() => setLoading(false))
   }, [headers])
 
+  useEffect(() => {
+    const refresh = () => {
+      const getSummary = axios.get(`${API}/api/work/summary/today`, { headers })
+        .then(r => {
+          const by = {}
+          const list = Array.isArray(r.data?.employees) ? r.data.employees : []
+          list.forEach(e => { by[e.employeeId] = e })
+          setSummaryByEmp(by)
+        }).catch(()=>{})
+      const getSessions = axios.get(`${API}/api/work/sessions/today`, { headers })
+        .then(r => {
+          const by = {}
+          const list = Array.isArray(r.data?.employees) ? r.data.employees : []
+          list.forEach(e => { by[e.employeeId] = Array.isArray(e.sessions) ? e.sessions : [] })
+          setSessionsByEmp(by)
+        }).catch(()=>{})
+      Promise.allSettled([getSummary, getSessions]).catch(()=>{})
+    }
+    const id = setInterval(refresh, 30000)
+    return () => clearInterval(id)
+  }, [headers])
+
   // Load managers list for super admin team switcher
   useEffect(() => {
     try {

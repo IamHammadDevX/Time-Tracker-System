@@ -7,7 +7,8 @@ import { resolveApiBase } from '../api.js'
 let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Dashboard() {
-  const [org, setOrg] = useState(null)
+  const [team, setTeam] = useState(null)
+  const [role, setRole] = useState('')
   const [employeesCount, setEmployeesCount] = useState(0)
   const [employees, setEmployees] = useState([])
   const [recentFiles, setRecentFiles] = useState([])
@@ -20,10 +21,15 @@ export default function Dashboard() {
     const headers = { Authorization: `Bearer ${token}` }
     resolveApiBase().then((BASE)=>{
       API = BASE
-      const getOrg = axios.get(`${BASE}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
+      let role = ''
+      try { const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); role = payload?.role } catch {}
+      setRole(role || '')
+      const getTeamReq = role === 'manager'
+        ? axios.get(`${BASE}/api/team`, { headers }).then(r => setTeam(r.data?.team || null)).catch(()=>{})
+        : axios.get(`${BASE}/api/org`, { headers }).then(r => setTeam(r.data?.organization || null)).catch(()=>{})
       const getUsers = axios.get(`${BASE}/api/employees`, { headers }).then(r => { const list = r.data.users || []; setEmployees(list); setEmployeesCount(list.length) }).catch(()=> { setEmployees([]); setEmployeesCount(0) })
       const getFiles = axios.get(`${BASE}/api/uploads/list`, { headers }).then(r => setRecentFiles((r.data.files || []).slice(-6).reverse())).catch(()=>{})
-      Promise.allSettled([getOrg, getUsers, getFiles]).finally(() => setLoading(false))
+      Promise.allSettled([getTeamReq, getUsers, getFiles]).finally(() => setLoading(false))
     })
   }, [])
 
@@ -71,11 +77,13 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold">Dashboard</h2>
-            <p className="text-gray-700">Overview of your organization and recent activity.</p>
+            <p className="text-gray-700">Overview of your team and recent activity.</p>
           </div>
-          <div>
-            <Link to="/setup" className="px-4 py-2.5 rounded bg-blue-600 text-white hover:bg-blue-700">Organization Setup</Link>
-          </div>
+          {role === 'super_admin' && (
+            <div>
+              <Link to="/setup" className="px-4 py-2.5 rounded bg-blue-600 text-white hover:bg-blue-700">Team Setup</Link>
+            </div>
+          )}
         </div>
 
         {managers.length > 0 && (
@@ -94,7 +102,7 @@ export default function Dashboard() {
 
         {/* Stats */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Stat label="Organization" value={org?.name || 'Not configured'} />
+          <Stat label="Team" value={team?.name || 'Not configured'} />
           <Stat label="Employees" value={filteredEmployees.length} />
           <Stat label="Recent Screenshots" value={filteredFiles.length} />
           <Stat label="Status" value={loading ? 'Loading…' : 'Healthy'} />
@@ -107,7 +115,7 @@ export default function Dashboard() {
             <Quick to="/live" title="Live View" desc="See employee screens in real-time." icon={<SvgLive/>} />
             <Quick to="/report" title="Report" desc="Filter screenshots and sessions by date." icon={<SvgCamera/>} />
             <Quick to="/activity" title="Activity" desc="Review recent activity by employee." icon={<SvgChart/>} />
-            <Quick to="/setup" title="Setup" desc="Configure organization and invite users." icon={<SvgCog/>} />
+            <Quick to="/setup" title="Setup" desc="Configure team and invite users." icon={<SvgCog/>} />
             <Quick to="/downloads" title="Downloads" desc="Get the desktop tracker client." icon={<SvgDownload/>} />
           </div>
         </section>

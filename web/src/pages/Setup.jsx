@@ -6,8 +6,8 @@ import Nav from '../components/Nav.jsx'
 const API = import.meta.env.VITE_API_URL
 
 export default function Setup() {
-  const [orgName, setOrgName] = useState('')
-  const [org, setOrg] = useState(null)
+  const [teamName, setTeamName] = useState('')
+  const [team, setTeam] = useState(null)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [users, setUsers] = useState([])
@@ -22,7 +22,7 @@ export default function Setup() {
   const headers = { Authorization: `Bearer ${token}` }
 
   useEffect(() => {
-    axios.get(`${API}/api/org`, { headers }).then(r => setOrg(r.data.organization)).catch(()=>{})
+    axios.get(`${API}/api/org`, { headers }).then(r => setTeam(r.data.organization)).catch(()=>{})
     axios.get(`${API}/api/employees`, { headers }).then(r => setUsers(r.data.users || [])).catch(()=>{})
     // decode role from JWT for conditional UI
     try {
@@ -37,9 +37,9 @@ export default function Setup() {
   const saveOrg = async () => {
     setMsg(''); setError('')
     try {
-      const r = await axios.post(`${API}/api/org`, { name: orgName }, { headers })
-      setOrg(r.data.organization)
-      setMsg('Organization saved')
+      const r = await axios.post(`${API}/api/org`, { name: teamName }, { headers })
+      setTeam(r.data.organization)
+      setMsg('Team saved')
     } catch (e) {
       setError(e?.response?.data?.error || e.message)
     }
@@ -81,14 +81,16 @@ export default function Setup() {
         {msg && <div className="text-green-700 text-sm">{msg}</div>}
         {tempPwdMsg && <div className="text-blue-700 text-sm">{tempPwdMsg}</div>}
 
-        <section className="bg-white border rounded p-4 space-y-3">
-          <div className="font-semibold">Organization</div>
-          <div className="text-sm text-gray-600">Current: {org?.name || 'Not set'}</div>
-          <div className="flex gap-2">
-            <input className="border rounded px-3 py-2 flex-1" placeholder="Organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} />
-            <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={saveOrg}>Save</button>
-          </div>
-        </section>
+        {role === 'super_admin' && (
+          <section className="bg-white border rounded p-4 space-y-3">
+            <div className="font-semibold">Team</div>
+            <div className="text-sm text-gray-600">Current: {team?.name || 'Not set'}</div>
+            <div className="flex gap-2">
+              <input className="border rounded px-3 py-2 flex-1" placeholder="Team name" value={teamName} onChange={e=>setTeamName(e.target.value)} />
+              <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={saveOrg}>Save</button>
+            </div>
+          </section>
+        )}
 
         <section className="bg-white border rounded p-4 space-y-3">
           <div className="font-semibold">Employees</div>

@@ -101,21 +101,6 @@ export default function Report() {
         {loading && <div>Loading…</div>}
 
         <section className="space-y-2">
-          <div className="font-semibold">Screenshots</div>
-          {files.length === 0 && <div className="text-xs text-gray-600">No screenshots for the selected filters.</div>}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {files.map((f, i) => (
-              <div key={i} className="text-center">
-                <a href={`${API}/${f.file}`} target="_blank" rel="noreferrer">
-                  <img className="w-full h-auto border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
-                </a>
-                <div className="text-[10px] text-gray-600 mt-1">{new Date(f.ts || '').toLocaleString()}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-2">
           <div className="font-semibold">Sessions</div>
           {sessions.length === 0 && <div className="text-xs text-gray-600">No sessions for the selected filters.</div>}
           {sessions.length > 0 && (
@@ -149,6 +134,25 @@ export default function Report() {
             </div>
           )}
         </section>
+
+        {(fromDate || toDate) && (
+          <section className="space-y-2">
+            <div className="font-semibold">Screenshots</div>
+            {files.length === 0 && <div className="text-xs text-gray-600">No screenshots for the selected date range.</div>}
+            {files.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {files.map((f, i) => (
+                  <div key={i} className="text-center">
+                    <a href={`${API}/${f.file}`} target="_blank" rel="noreferrer">
+                      <img className="w-full h-auto border rounded" src={`${API}/${f.file}`} alt="Screenshot" />
+                    </a>
+                    <div className="text-[10px] text-gray-600 mt-1">{new Date(f.ts || '').toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </div>
   )

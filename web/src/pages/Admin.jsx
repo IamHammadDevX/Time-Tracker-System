@@ -24,8 +24,9 @@ export default function Admin() {
       const token = localStorage.getItem('token')
       const headers = { Authorization: `Bearer ${token}` }
       const BASE = await resolveApiBase()
+      if (!orgName || !orgName.trim()) { setError('Team name is required'); return }
       const r = await axios.post(`${BASE}/api/admin/managers`, { email, password, orgName }, { headers })
-      setMsg(`Manager ${r.data?.manager?.email} created${r.data?.organization ? ' with org '+r.data.organization.name : ''}.`)
+      setMsg(`Manager ${r.data?.manager?.email} created${r.data?.organization ? ' with team '+r.data.organization.name : ''}.`)
       setEmail(''); setPassword(''); setOrgName('')
       // refresh managers
       loadManagers()
@@ -112,7 +113,7 @@ export default function Admin() {
       <Nav />
       <main className="p-4 space-y-6">
         <h2 className="text-lg font-semibold">Super Admin</h2>
-        <p className="text-sm text-gray-700">Create manager accounts and assign organizations.</p>
+        <p className="text-sm text-gray-700">Create manager accounts and assign teams.</p>
         {error && <div className="text-red-600 text-sm">{error}</div>}
         {msg && <div className="text-blue-700 text-sm">{msg}</div>}
 
@@ -124,7 +125,7 @@ export default function Admin() {
               <input className="border rounded px-3 py-2 flex-1" type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} />
             </div>
             <div>
-              <input className="border rounded px-3 py-2 w-full" placeholder="Organization name (optional)" value={orgName} onChange={e=>setOrgName(e.target.value)} />
+              <input className="border rounded px-3 py-2 w-full" placeholder="Team name" value={orgName} onChange={e=>setOrgName(e.target.value)} />
             </div>
             <div>
               <button className="px-3 py-2 rounded bg-blue-600 text-white" type="submit">Create Manager</button>
@@ -139,7 +140,7 @@ export default function Admin() {
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 px-2">Manager</th>
-                  <th className="py-2 px-2">Organization</th>
+                  <th className="py-2 px-2">Team</th>
                   <th className="py-2 px-2">Employees</th>
                   <th className="py-2 px-2">Actions</th>
                 </tr>
