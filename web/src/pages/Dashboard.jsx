@@ -48,7 +48,8 @@ export default function Dashboard() {
       })
     }
     s.on('uploads:cleanup_done', refreshShots)
-    return () => { s.off('uploads:cleanup_done', refreshShots) }
+    s.on('uploads:new', refreshShots)
+    return () => { s.off('uploads:cleanup_done', refreshShots); s.off('uploads:new', refreshShots) }
   }, [])
 
   // Load managers for super admin team switcher

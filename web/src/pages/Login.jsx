@@ -3,8 +3,8 @@ import { useState } from 'react'
 import axios from 'axios'
 
 export default function Login() {
-  const [email, setEmail] = useState('admin@example.com')
-  const [password, setPassword] = useState('admin123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [role, setRole] = useState('super_admin')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -32,11 +32,11 @@ export default function Login() {
         {error && <div className="text-red-600 text-sm">{error}</div>}
         <div>
           <label className="block text-sm">Email</label>
-          <input className="mt-1 w-full border rounded px-3 py-2" value={email} onChange={e=>setEmail(e.target.value)} />
+          <input className="mt-1 w-full border rounded px-3 py-2" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)} />
         </div>
         <div>
           <label className="block text-sm">Password</label>
-          <input type="password" className="mt-1 w-full border rounded px-3 py-2" value={password} onChange={e=>setPassword(e.target.value)} />
+          <input type="password" className="mt-1 w-full border rounded px-3 py-2" placeholder="Enter your password" value={password} onChange={e=>setPassword(e.target.value)} />
         </div>
         <div>
           <label className="block text-sm">Role</label>

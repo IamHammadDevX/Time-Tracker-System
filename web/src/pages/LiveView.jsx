@@ -15,6 +15,7 @@ export default function LiveView() {
   const [allEmployees, setAllEmployees] = useState([])
   const [managers, setManagers] = useState([])
   const [selectedManager, setSelectedManager] = useState('')
+  const [role, setRole] = useState('')
   const [status, setStatus] = useState('idle') // idle | active | offline
   const [frames, setFrames] = useState([]) // [{b64, ts}]
   
@@ -45,11 +46,21 @@ export default function LiveView() {
     })
     // Presence events
     s.on('presence:list', ({ users }) => {
-      const list = Array.isArray(users) ? users : []
+      let list = Array.isArray(users) ? users : []
+      // For managers, ensure list only includes team members
+      if (role === 'manager' && allEmployees.length) {
+        const teamSet = new Set(allEmployees.map(e => e.email))
+        list = list.filter(u => teamSet.has(u))
+      }
       setOnlineEmployees(list)
       if (!employeeId && list.length) setEmployeeId(list[0])
     })
     s.on('presence:online', ({ userId }) => {
+      // Only add if belongs to manager's team when role is manager
+      if (role === 'manager' && allEmployees.length) {
+        const teamSet = new Set(allEmployees.map(e => e.email))
+        if (!teamSet.has(userId)) return
+      }
       setOnlineEmployees(prev => Array.from(new Set([userId, ...prev])))
     })
     s.on('presence:offline', ({ userId }) => {
@@ -72,9 +83,15 @@ export default function LiveView() {
     const headers = { Authorization: `Bearer ${token}` }
     resolveApiBase().then((BASE)=>{
       axios.get(`${BASE}/api/employees`, { headers }).then(r => setAllEmployees(r.data?.users || [])).catch(()=>{})
+      axios.get(`${BASE}/api/presence/online`, { headers }).then(r => {
+        const list = Array.isArray(r.data?.users) ? r.data.users : []
+        setOnlineEmployees(list)
+        setFilteredOnline(list)
+      }).catch(()=>{})
     })
     let role = ''
     try { const payload = JSON.parse(atob((token || '').split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); role = payload?.role } catch {}
+    setRole(role || '')
     if (role === 'super_admin') {
       resolveApiBase().then((BASE)=>{
         axios.get(`${BASE}/api/admin/managers`, { headers }).then(r => setManagers(r.data?.managers || [])).catch(()=>{})
@@ -83,9 +100,13 @@ export default function LiveView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Apply filter to online employees when manager selected
+  // Apply filter to online employees when manager selected (super_admin view)
   useEffect(() => {
-    if (!selectedManager) { setFilteredOnline(onlineEmployees); return }
+    if (!selectedManager) {
+      // For managers, already filtered onlineEmployees to team; for super_admin, show all online
+      setFilteredOnline(onlineEmployees)
+      return
+    }
     const team = allEmployees.filter(e => String(e.managerId || '') === String(selectedManager))
       .map(e => e.email)
     const filtered = onlineEmployees.filter(e => team.includes(e))
@@ -148,19 +169,12 @@ export default function LiveView() {
                 value={employeeId}
                 onChange={e=>setEmployeeId(e.target.value)}>
                 <option value="">Select employee…</option>
-                {(() => {
-                  const online = filteredOnline.length ? filteredOnline : onlineEmployees;
-                  const options = online.length ? online : allEmployees.map(e => e.email);
-                  return options.map(email => (
-                    <option key={email} value={email}>{email}</option>
-                  ))
-                })()}
+                {filteredOnline.map(email => (
+                  <option key={email} value={email}>{email}</option>
+                ))}
               </select>
-              {selectedManager && filteredOnline.length === 0 && onlineEmployees.length > 0 && (
-                <div className="text-xs text-gray-600 mt-1">No online employees for this manager yet.</div>
-              )}
-              {!selectedManager && onlineEmployees.length === 0 && (
-                <div className="text-xs text-gray-600 mt-1">No one is online. You can still select an employee; frames will appear as screenshots arrive.</div>
+              {filteredOnline.length === 0 && (
+                <div className="text-xs text-gray-600 mt-1">No one is online.</div>
               )}
             </div>
             <button className="px-4 py-2.5 rounded bg-green-600 text-white hover:bg-green-700" onClick={start}>Start</button>

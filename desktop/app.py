@@ -131,7 +131,7 @@ class TimeTrackerApp:
         # Header controls: Start/Stop Tracking
         header_controls = tk.Frame(header, bg=self.color_bg)
         header_controls.pack(side=tk.RIGHT, padx=8, pady=8)
-        self.start_btn = ttk.Button(header_controls, text='Start', style='Success.TButton', state=tk.DISABLED, command=self.start_tracking)
+        self.start_btn = ttk.Button(header_controls, text='Start Tracking', style='Success.TButton', state=tk.DISABLED, command=self.start_tracking)
         self.stop_btn = ttk.Button(header_controls, text='Stop', style='Danger.TButton', state=tk.DISABLED, command=self.stop_tracking)
 
     def login(self):
@@ -229,12 +229,9 @@ class TimeTrackerApp:
                 pass
             self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
             self.start_btn.configure(state=tk.NORMAL)
-            mins = self.capture_interval_seconds // 60
-            self.status_var.set(f'Interval: {mins} minute(s)')
         except Exception as e:
             print('[interval] fetch error:', e)
             self.start_btn.configure(state=tk.DISABLED)
-            self.status_var.set('Failed to load interval; contact your manager')
 
     def _on_interval_assigned(self, data=None):
         try:
@@ -247,14 +244,8 @@ class TimeTrackerApp:
                 self.progress.configure(maximum=self.capture_interval_seconds)
             except Exception:
                 pass
-            mins = secs // 60
             self.countdown_var.set(f'Next capture in {self.capture_interval_seconds}s')
             self.start_btn.configure(state=tk.NORMAL)
-            self.status_var.set(f'Interval assigned: {mins} minute(s). Starting tracking…')
-            try:
-                self.header_status.configure(text=f'Interval: {mins}m assigned')
-            except Exception:
-                pass
             # Auto-start tracking if not already running
             if not self.tracking:
                 try:

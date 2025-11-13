@@ -605,6 +605,7 @@ app.post('/api/uploads/screenshot', requireRole(['employee']), upload.single('sc
     } catch (e) {
       console.error('[meta] write failed:', e);
     }
+    try { io.emit('uploads:new', { employeeId, file: record.file, ts: record.ts }); } catch {}
 
     // Mark employee as online upon receiving a screenshot (helps Live View selection)
     if (employeeId && employeeId !== 'unknown') {
@@ -1030,3 +1031,17 @@ httpServer.listen(PORT, () => {
   }
 });
 // ---------- END: compatibility proxy ----------
+// Query current online employees (role-scoped)
+app.get('/api/presence/online', requireRole(['manager', 'super_admin']), (req, res) => {
+  try {
+    let users = Array.from(onlineEmployees);
+    if (req.user?.role === 'manager') {
+      const teamEmails = getTeamEmailsForManager(req.user?.uid || req.user?.sub);
+      users = users.filter(u => teamEmails.includes(u));
+    }
+    res.json({ users });
+  } catch (e) {
+    console.error('[presence:online] error:', e);
+    res.status(500).json({ error: 'Failed to read presence' });
+  }
+});
