@@ -27,7 +27,7 @@ export default function Nav() {
           {link('/work-hours', 'Work Hours')}
           {link('/setup', 'Setup')}
           {role === 'super_admin' && link('/admin', 'Admin')}
-          {link('/downloads', 'Downloads')}
+          <Link className={`px-3 py-2 rounded text-sm ${pathname==='/downloads'? 'bg-blue-600 text-white':'hover:bg-blue-100'}`} to="/downloads" title="Step-by-step guide to install the Python desktop client">Downloads</Link>
         </div>
         <div className="ml-auto">
           <button className="px-3 py-2 rounded text-sm hover:bg-red-100" onClick={() => {localStorage.removeItem('token'); location.href='/login'}}>
