@@ -117,6 +117,10 @@ class TimeTrackerApp:
 
         self.status_var = tk.StringVar(value='Not logged in')
         ttk.Label(login_tab, textvariable=self.status_var, style='Muted.TLabel').grid(row=2, column=0, columnspan=3, sticky='w', pady=(12, 0))
+        self.active_time_var = tk.StringVar(value='Active: 00:00:00')
+        self.idle_time_var = tk.StringVar(value='Idle: 00:00:00')
+        ttk.Label(login_tab, textvariable=self.active_time_var, style='Muted.TLabel').grid(row=3, column=0, columnspan=3, sticky='w')
+        ttk.Label(login_tab, textvariable=self.idle_time_var, style='Muted.TLabel').grid(row=4, column=0, columnspan=3, sticky='w')
         for i in range(3):
             login_tab.columnconfigure(i, weight=1)
 
@@ -192,6 +196,10 @@ class TimeTrackerApp:
             self._start_live_loop()
         except Exception as e:
             print('[live] auto-start error:', e)
+        try:
+            self.login_btn.configure(text='Logout', command=self.logout)
+        except Exception:
+            pass
 
     def _connect_socket(self, email):
         try:
@@ -276,6 +284,13 @@ class TimeTrackerApp:
             return
         self.tracking = True
         self._stop_event.clear()
+        try:
+            self.session_start_ts = time.time()
+            self.total_idle_seconds = 0
+            self.active_time_var.set('Active: 00:00:00')
+            self.idle_time_var.set('Idle: 00:00:00')
+        except Exception:
+            pass
         self.status_var.set('Tracking…')
         self.header_status.configure(text='Tracking…')
         self.start_btn.configure(state=tk.DISABLED)
@@ -487,6 +502,11 @@ class TimeTrackerApp:
                 else:
                     prev_idle_duration = 0
                 prev_idle_duration = current_idle_duration
+                try:
+                    self.total_idle_seconds = max(0, (self.total_idle_seconds or 0) + delta)
+                    self.idle_time_var.set(f"Idle: {self._format_hms(self.total_idle_seconds)}")
+                except Exception:
+                    pass
                 headers = { 'Authorization': f'Bearer {self.token}' }
                 payload = { 'idleDeltaSeconds': delta, 'idleDurationSeconds': current_idle_duration }
                 requests.post(f'{self.backend_url}/api/work/heartbeat', json=payload, headers=headers, timeout=10)
@@ -518,9 +538,53 @@ class TimeTrackerApp:
             except Exception:
                 pass
             self.countdown_var.set(f'Next capture in {remaining}s')
+            try:
+                if getattr(self, 'session_start_ts', None):
+                    elapsed = max(0, int(time.time() - self.session_start_ts))
+                    self.active_time_var.set(f"Active: {self._format_hms(elapsed)}")
+                if remaining > 0:
+                    self.root.after(1000, lambda: tick(remaining - 1))
+                else:
+                    self.root.after(1000, lambda: tick(self.capture_interval_seconds))
+                return
+            except Exception:
+                pass
             if remaining > 0:
                 self.root.after(1000, lambda: tick(remaining - 1))
         tick(seconds)
+
+    def _format_hms(self, s: int) -> str:
+        try:
+            s = max(0, int(s))
+            h = s // 3600
+            m = (s % 3600) // 60
+            r = s % 60
+            return f"{str(h).zfill(2)}:{str(m).zfill(2)}:{str(r).zfill(2)}"
+        except Exception:
+            return "00:00:00"
+
+    def logout(self):
+        try:
+            if self.tracking:
+                try:
+                    self.stop_tracking()
+                except Exception:
+                    pass
+            self.disable_live_view()
+            try:
+                if self.sio:
+                    self.sio.disconnect()
+            except Exception:
+                pass
+            self.token = None
+            self.status_var.set('Not logged in')
+            self.header_status.configure(text='Not logged in')
+            try:
+                self.login_btn.configure(text='Login', command=self.login)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _resolve_backend_url(self) -> str:
         # Try env-provided URL, then common local ports (4000, 4011)
