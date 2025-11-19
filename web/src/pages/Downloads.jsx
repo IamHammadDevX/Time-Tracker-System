@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import Nav from '../components/Nav.jsx'
+let API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 // Guided install flow with tooltips and checkmarks
 
@@ -33,10 +34,11 @@ export default function Downloads() {
                 {done.deps && <span className="text-green-600">✔</span>}
               </div>
               <div className="mt-2 flex gap-2 flex-wrap">
-                <a className="px-3 py-2 rounded bg-gray-800 text-white" href="/downloads/requirements.txt" download>Download requirements.txt</a>
+                <a className="px-3 py-2 rounded bg-gray-800 text-white" href={`${API}/downloads/requirements.txt`} download>Download requirements.txt</a>
                 <button className="px-3 py-2 rounded border" onClick={()=>copy('py -m pip install -r requirements.txt')}>Copy pip command</button>
                 <button className="px-3 py-2 rounded border" onClick={()=>setDone(prev=>({ ...prev, deps:true }))}>Mark Done</button>
               </div>
+              <div className="mt-2 font-mono bg-gray-100 rounded px-2 py-1 text-sm">py -m pip install -r requirements.txt</div>
             </div>
 
             <div className="border rounded p-3" title="Save the app file to a folder (e.g., C:\\Users\\You\\Desktop\\TimeTracker).">
@@ -45,7 +47,7 @@ export default function Downloads() {
                 {done.files && <span className="text-green-600">✔</span>}
               </div>
               <div className="mt-2 flex gap-2 flex-wrap">
-                <a className="px-3 py-2 rounded bg-blue-600 text-white" href="/downloads/app.py" download>Download app.py</a>
+                <a className="px-3 py-2 rounded bg-blue-600 text-white" href={`${API}/downloads/app.py`} download>Download app.py</a>
                 <button className="px-3 py-2 rounded border" onClick={()=>setDone(prev=>({ ...prev, files:true }))}>Mark Done</button>
               </div>
               <div className="text-xs text-gray-600 mt-2">Optional: create a virtual environment: <span className="font-mono">py -m venv .venv &amp;&amp; .venv\\Scripts\\activate</span></div>
@@ -60,6 +62,7 @@ export default function Downloads() {
                 <button className="px-3 py-2 rounded border" onClick={()=>copy('py app.py')}>Copy run command</button>
                 <button className="px-3 py-2 rounded border" onClick={()=>setDone(prev=>({ ...prev, run:true }))}>Mark Done</button>
               </div>
+              <div className="mt-2 font-mono bg-gray-100 rounded px-2 py-1 text-sm">py app.py</div>
               <div className="text-xs text-gray-600 mt-2">Optional .bat content:
                 <span className="font-mono"> @echo off &amp; py app.py</span>
               </div>
