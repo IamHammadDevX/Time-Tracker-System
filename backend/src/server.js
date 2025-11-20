@@ -112,9 +112,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 // Serve uploaded images statically for the web UI
 app.use('/uploads', express.static(uploadPath));
-// Serve desktop client source files for download only (py + requirements)
-const projectRoot = path.resolve(process.cwd(), '..');
-const desktopSrcPath = path.join(projectRoot, 'desktop');
+const desktopSrcPath = path.join(process.cwd(), 'desktop');
 app.use('/downloads', express.static(desktopSrcPath));
 
 // Health check
@@ -956,7 +954,7 @@ process.on('unhandledRejection', (err) => {
 
 // Serve built frontend (SPA) in production if available
 try {
-  const webDistPath = path.join(projectRoot, 'web', 'dist');
+  const webDistPath = path.join(process.cwd(), 'web', 'dist');
   if (fs.existsSync(webDistPath)) {
     app.use(express.static(webDistPath));
     // SPA fallback: send index.html for non-API routes

@@ -22,7 +22,7 @@ except Exception:
     raise RuntimeError('Install dependencies from requirements.txt (mss, Pillow).')
 
 
-BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:4000')
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://mail.vughy.com:10002')
 SCREENSHOT_INTERVAL_SECONDS = int(os.environ.get('SCREENSHOT_INTERVAL_SECONDS', '180'))  # default 3 minutes
 LIVE_VIEW_INTERVAL_SECONDS = int(os.environ.get('LIVE_VIEW_INTERVAL_SECONDS', '5'))  # faster live frames
 HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get('HEARTBEAT_INTERVAL_SECONDS', '60'))  # send idle heartbeat every 60s
@@ -593,6 +593,7 @@ class TimeTrackerApp:
         if env_url:
             candidates.append(env_url)
         candidates.extend([
+            'http://mail.vughy.com:10002',
             'http://127.0.0.1:4000', 'http://localhost:4000',
             'http://127.0.0.1:4011', 'http://localhost:4011',
         ])
